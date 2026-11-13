@@ -16,7 +16,7 @@ export default function ProductCard({ product: p, hoverSecondaryImage = false })
     ? Math.round((1 - variant.price / variant.mrp) * 100)
     : 0;
   return (
-    <article className={`card${secondaryImage ? ' has-secondary-image' : ''}`}>
+    <article className={`card product-card${secondaryImage ? ' has-secondary-image' : ''}`}>
       {off > 0 && <span className="tg">-{off}%</span>}
       <Link className="im" to={`/products/${p._id}`} aria-label={p.name}>
         <span className="product-card-image-frame">
@@ -47,7 +47,9 @@ export default function ProductCard({ product: p, hoverSecondaryImage = false })
             </div>
           </div>
         ) : variant.label ? (
-          <small className="product-card-size">{variant.label}</small>
+          <span className="product-card-size-option product-card-size-single selected" aria-label={`Size: ${variant.label}`}>
+            {variant.label}
+          </span>
         ) : null}
         <div className="pr"><b>{money(variant.price)}</b>{off > 0 && <s>{money(variant.mrp)}</s>}</div>
         <button className="add" aria-label={`Add ${p.name}${variant.label ? `, ${variant.label}` : ''} to cart`}

@@ -32,7 +32,7 @@ export default function Collection() {
     <>
       <PageHeader title={title || 'Shop'} crumbs={[{ label: 'Shop', to: '/collections/all' }, { label: title || 'Shop' }]} />
       <section className="sec" style={{ paddingTop: 36 }}>
-        <div className="w">
+        <div className="w product-catalog-content">
           <Reveal className="tb">
             <div className="chips">
               <Link to="/collections/all" className={slug === 'all' ? 'on' : ''}>All Products</Link>
@@ -52,7 +52,7 @@ export default function Collection() {
             </label>
           </Reveal>
           {loading ? <p>Loading products…</p> : (
-            <Reveal className="grid rev-stagger">
+            <Reveal className="grid product-listing-grid rev-stagger">
               {list.map((p) => <ProductCard key={p._id} product={p} />)}
               {list.length === 0 && <p>No products in this collection yet.</p>}
             </Reveal>

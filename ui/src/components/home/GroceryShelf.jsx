@@ -11,7 +11,7 @@ export default function GroceryShelf() {
 
   return (
     <section className="sec grocery-shelf" id="grocery-shelf">
-      <div className="w">
+      <div className="w product-catalog-content">
         <Reveal className="grocery-shelf-heading">
           <div>
             <span className="grocery-eyebrow">Bhairav Brand collection</span>
@@ -28,7 +28,7 @@ export default function GroceryShelf() {
           </Reveal>
         )}
 
-        <Reveal className={`grid grocery-product-grid rev-stagger${homeProducts.length < 4 ? ' grocery-product-grid-limited' : ''}`}>
+        <Reveal className={`grid product-listing-grid grocery-product-grid rev-stagger${homeProducts.length < 4 ? ' grocery-product-grid-limited' : ''}`}>
           {homeProducts.map((product) => (
             <ProductCard key={product._id} product={product} hoverSecondaryImage />
           ))}
