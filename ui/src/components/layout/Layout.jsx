@@ -6,6 +6,7 @@ import Footer from './Footer.jsx';
 import MobileDrawer from './MobileDrawer.jsx';
 import CartDrawer from './CartDrawer.jsx';
 import BackToTop from '../ui/BackToTop.jsx';
+import WhatsAppButton from '../ui/WhatsAppButton.jsx';
 
 export default function Layout() {
   const [menu, setMenu] = useState(false);
@@ -30,6 +31,7 @@ export default function Layout() {
       <MobileDrawer open={menu} onClose={close} />
       <CartDrawer open={cart} onClose={close} />
       <BackToTop />
+      <WhatsAppButton />
     </>
   );
 }

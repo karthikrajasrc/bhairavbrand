@@ -50,7 +50,11 @@ export default function ProductCard({ product: p, hoverSecondaryImage = false })
           <small className="product-card-size">{variant.label}</small>
         ) : null}
         <div className="pr"><b>{money(variant.price)}</b>{off > 0 && <s>{money(variant.mrp)}</s>}</div>
-        <button className="add" onClick={() => add(p._id, 1, variant)}>Add to cart{variant.label ? ` · ${variant.label}` : ''}</button>
+        <button className="add" aria-label={`Add ${p.name}${variant.label ? `, ${variant.label}` : ''} to cart`}
+          onClick={() => add(p._id, 1, variant)}>
+          Add to cart
+          {variant.label && <span className="product-card-add-size"> · {variant.label}</span>}
+        </button>
       </div>
     </article>
   );

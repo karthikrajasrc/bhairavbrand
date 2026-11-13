@@ -11,9 +11,9 @@ import AdminLayout from './components/admin/AdminLayout.jsx';
 import AdminProducts from './pages/AdminProducts.jsx';
 import AdminAddProduct from './pages/AdminAddProduct.jsx';
 import AdminCategories from './pages/AdminCategories.jsx';
-import AdminBanners from './pages/AdminBanners.jsx';
-import AdminAddBanner from './pages/AdminAddBanner.jsx';
 import AdminDelivery from './pages/AdminDelivery.jsx';
+import AdminOrders from './pages/AdminOrders.jsx';
+import Checkout from './pages/Checkout.jsx';
 import { useAuth } from './context/AuthContext.jsx';
 
 function AdminRoute() {
@@ -34,21 +34,20 @@ export default function App() {
           <Route path="products/new" element={<AdminAddProduct />} />
           <Route path="products/:id/edit" element={<AdminAddProduct />} />
           <Route path="categories" element={<AdminCategories />} />
-          <Route path="banners" element={<AdminBanners />} />
-          <Route path="banners/new" element={<AdminAddBanner />} />
           <Route path="delivery" element={<AdminDelivery />} />
+          <Route path="orders" element={<AdminOrders />} />
           <Route path="*" element={<NotFound />} />
         </Route>
       </Route>
       <Route element={<Layout />}>
         <Route index element={<Home />} />
         <Route path="collections/:slug" element={<Collection />} />
-        <Route path="collections/:slug/:subcategory" element={<Collection />} />
         <Route path="products/:id" element={<Product />} />
         <Route path="about" element={<About />} />
         <Route path="signup" element={<AuthPage mode="signup" />} />
         <Route path="login" element={<AuthPage mode="login" />} />
         <Route path="account" element={<Account />} />
+        <Route path="checkout" element={<Checkout />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>

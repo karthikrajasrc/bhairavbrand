@@ -54,7 +54,7 @@ export default function AuthPage({ mode }) {
   return (
     <section className="auth-page">
       <Reveal className="auth-card">
-        <p className="auth-eyebrow">Banyan Basket</p>
+        <p className="auth-eyebrow">Bhairav Brand</p>
         <h1>{isSignup ? 'Create your account' : 'Welcome back'}</h1>
         <p className="auth-intro">
           {isSignup ? 'Sign up to make your next visit easier.' : 'Sign in to continue to your account.'}
@@ -120,7 +120,7 @@ export default function AuthPage({ mode }) {
         )}
 
         <p className="auth-switch">
-          {isSignup ? 'Already have an account?' : 'New to Banyan Basket?'}{' '}
+          {isSignup ? 'Already have an account?' : 'New to Bhairav Brand?'}{' '}
           <Link to={isSignup ? '/login' : '/signup'}>{isSignup ? 'Sign in' : 'Create an account'}</Link>
         </p>
       </Reveal>

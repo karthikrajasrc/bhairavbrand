@@ -17,8 +17,6 @@ export default function AdminCategories() {
   const [categoryView, setCategoryView] = useState('add');
   const [search, setSearch] = useState('');
   const [name, setName] = useState('');
-  const [parentId, setParentId] = useState('');
-  const [imageFile, setImageFile] = useState(null);
   const [iconFile, setIconFile] = useState(null);
   const [shortcutIcons, setShortcutIcons] = useState({ offersIconUrl: '', shopAllIconUrl: '' });
   const [offersIconFile, setOffersIconFile] = useState(null);
@@ -49,20 +47,16 @@ export default function AdminCategories() {
   const submit = async (event) => {
     event.preventDefault();
     setSaving(true);
-    setSaveStage(imageFile || iconFile ? 'Uploading and optimizing images…' : 'Saving category…');
+    setSaveStage(iconFile ? 'Uploading and optimizing icon…' : 'Saving category…');
     try {
-      if (!parentId && !imageFile && !editing?.imageUrl) {
-        throw new Error('Choose an image for a top-level category');
-      }
-      const imageUrl = imageFile ? await uploadImage(imageFile) : editing?.imageUrl || '';
       const iconUrl = iconFile ? await uploadImage(iconFile) : editing?.iconUrl || '';
       setSaveStage(editing ? 'Updating category…' : 'Saving category…');
       const slug = makeSlug(name);
       const { category } = await apiRequest(
         editing ? `/api/admin/categories/${editing._id}` : '/api/admin/categories',
         {
-        method: editing ? 'PUT' : 'POST',
-        body: { name, slug, imageUrl, iconUrl, parentId: parentId || null },
+          method: editing ? 'PUT' : 'POST',
+          body: { name, slug, iconUrl },
         },
       );
       let savedCategory = category;
@@ -82,8 +76,6 @@ export default function AdminCategories() {
         .sort((a, b) => a.name.localeCompare(b.name)));
       addCategory(savedCategory);
       setName('');
-      setParentId('');
-      setImageFile(null);
       setIconFile(null);
       setEditing(null);
       notify(editing ? 'Category updated.' : 'Category saved.');
@@ -99,15 +91,11 @@ export default function AdminCategories() {
     setCategoryView('add');
     setEditing(category);
     setName(category.name);
-    setParentId(category.parentId || '');
-    setImageFile(null);
     setIconFile(null);
   };
   const cancelEdit = () => {
     setEditing(null);
     setName('');
-    setParentId('');
-    setImageFile(null);
     setIconFile(null);
   };
 
@@ -152,18 +140,8 @@ export default function AdminCategories() {
   };
 
   const validCategories = normalizeCategories(categories);
-  const roots = validCategories.filter((category) => !category.parentId);
-  const categoryName = (category) => validCategories.find((item) => item._id === category.parentId)?.name;
-  const childrenOf = (categoryId) => validCategories
-    .filter((category) => category.parentId === categoryId)
-    .sort((a, b) => a.name.localeCompare(b.name));
-  const renderCategoryRow = (category, isChild = false) => (
-    <article className={`admin-product-row${isChild ? ' admin-category-child' : ' admin-category-root'}`}
-      key={category._id}>
-      {isChild && <span className="admin-category-connector" aria-hidden="true" />}
-      <span className="admin-product-art">
-        {category.imageUrl && <img src={category.imageUrl} alt="" />}
-      </span>
+  const renderCategoryRow = (category) => (
+    <article className="admin-product-row admin-category-row" key={category._id}>
       <span className="admin-category-icon-column" aria-label="Shortcut icon">
         {category.iconUrl
           ? <img src={category.iconUrl} alt={`${category.name} shortcut icon`} />
@@ -171,7 +149,7 @@ export default function AdminCategories() {
       </span>
       <div className="admin-record-copy">
         <b>{category.name}</b>
-        <small>{isChild ? `${categoryName(category) || 'Unknown parent'} · ` : ''}/{category.slug}</small>
+        <small>/{category.slug}</small>
       </div>
       <button className="admin-edit" disabled={busyId === category._id}
         onClick={() => editCategory(category)} type="button">
@@ -183,24 +161,10 @@ export default function AdminCategories() {
       </button>
     </article>
   );
-  const groupedIds = new Set(roots.flatMap((category) => [
-    category._id,
-    ...childrenOf(category._id).map((child) => child._id),
-  ]));
-  const ungroupedCategories = validCategories
-    .filter((category) => !groupedIds.has(category._id))
-    .sort((a, b) => a.name.localeCompare(b.name));
   const normalizedSearch = search.trim().toLowerCase();
-  const categoryMatches = (category) => {
-    const parentName = categoryName(category) || '';
-    return `${category.name} ${category.slug} ${parentName}`
-      .toLowerCase()
-      .includes(normalizedSearch);
-  };
-  const displayedRoots = roots
-    .filter((category) => categoryMatches(category) || childrenOf(category._id).some(categoryMatches))
+  const displayedCategories = validCategories
+    .filter((category) => `${category.name} ${category.slug}`.toLowerCase().includes(normalizedSearch))
     .sort((a, b) => a.name.localeCompare(b.name));
-  const displayedUngrouped = ungroupedCategories.filter(categoryMatches);
 
   return (
     <>
@@ -229,34 +193,17 @@ export default function AdminCategories() {
         </button>
       </div>
       {categoryView === 'add' && <form className="admin-panel admin-form" onSubmit={submit}>
-        <h3 className="admin-wide">{editing ? `Edit ${editing.name}` : 'Add category or subcategory'}</h3>
+        <h3 className="admin-wide">{editing ? `Edit ${editing.name}` : 'Add category'}</h3>
         <label>Name
           <input required minLength="2" maxLength="80" value={name}
             onChange={(event) => setName(event.target.value)} />
         </label>
-        <label>Parent category
-          <select disabled={Boolean(editing && !editing.parentId)} value={parentId} onChange={(event) => {
-            setParentId(event.target.value);
-            if (event.target.value) setImageFile(null);
-          }}>
-            <option value="">Top-level category</option>
-            {roots.map((category) => <option key={category._id} value={category._id}>{category.name}</option>)}
-          </select>
-        </label>
-        {!parentId && (
-          <>
-            <AdminImageField file={imageFile} label="Category image" onChange={setImageFile}
-              onRemoveImage={() => setImageFile(null)}
-              existingUrl={editing?.imageUrl || ''} onRemoveExisting={() => setEditing((current) => (
-                current ? { ...current, imageUrl: '' } : current
-              ))} required />
-            <AdminImageField file={iconFile} label="Category shortcut icon (optional)" onChange={setIconFile}
-              onRemoveImage={() => setIconFile(null)}
-              existingUrl={editing?.iconUrl || ''} onRemoveExisting={() => setEditing((current) => (
-                current ? { ...current, iconUrl: '' } : current
-              ))} />
-          </>
-        )}
+        <AdminImageField file={iconFile} label="Category shortcut icon (optional)"
+          recommendedDimensions="512 × 512 px (square)" onChange={setIconFile}
+          onRemoveImage={() => setIconFile(null)}
+          existingUrl={editing?.iconUrl || ''} onRemoveExisting={() => setEditing((current) => (
+            current ? { ...current, iconUrl: '' } : current
+          ))} />
         <div className="admin-form-actions admin-wide">
           <button className="btn" disabled={saving} type="submit">
             {saving ? 'Please wait…' : editing ? 'Save changes' : 'Add category'}
@@ -270,13 +217,15 @@ export default function AdminCategories() {
         <p className="admin-form-intro admin-wide">
           Offers appears first when its icon is set, followed by Shop All and then the categories above.
         </p>
-        <AdminImageField file={offersIconFile} label="Offers icon (optional)" onChange={setOffersIconFile}
+        <AdminImageField file={offersIconFile} label="Offers icon (optional)"
+          recommendedDimensions="512 × 512 px (square)" onChange={setOffersIconFile}
           onRemoveImage={() => setOffersIconFile(null)}
           existingUrl={shortcutIcons.offersIconUrl} onRemoveExisting={() => setShortcutIcons((current) => ({
             ...current,
             offersIconUrl: '',
           }))} />
-        <AdminImageField file={shopAllIconFile} label="Shop All icon (optional)" onChange={setShopAllIconFile}
+        <AdminImageField file={shopAllIconFile} label="Shop All icon (optional)"
+          recommendedDimensions="512 × 512 px (square)" onChange={setShopAllIconFile}
           onRemoveImage={() => setShopAllIconFile(null)}
           existingUrl={shortcutIcons.shopAllIconUrl} onRemoveExisting={() => setShortcutIcons((current) => ({
             ...current,
@@ -302,31 +251,9 @@ export default function AdminCategories() {
           />
         </div>
         {validCategories.length === 0 ? <p>No categories yet. Add one to start building your catalogue.</p>
-          : displayedRoots.length === 0 && displayedUngrouped.length === 0
+          : displayedCategories.length === 0
             ? <p role="status">No categories match “{search}”.</p> : (
-          <>
-            {displayedRoots.map((category) => {
-                const matchingRoot = categoryMatches(category);
-                const children = childrenOf(category._id)
-                  .filter((child) => matchingRoot || categoryMatches(child));
-                return (
-                  <section className="admin-category-group" key={category._id} aria-label={`${category.name} category`}>
-                    {renderCategoryRow(category)}
-                    {children.length > 0 && (
-                      <div className="admin-category-children">
-                        {children.map((child) => renderCategoryRow(child, true))}
-                      </div>
-                    )}
-                  </section>
-                );
-              })}
-            {displayedUngrouped.length > 0 && (
-              <section className="admin-category-group admin-category-ungrouped" aria-label="Unassigned categories">
-                <h3>Unassigned categories</h3>
-                {displayedUngrouped.map((category) => renderCategoryRow(category))}
-              </section>
-            )}
-          </>
+          displayedCategories.map(renderCategoryRow)
         )}
       </section>}
     </>

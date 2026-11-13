@@ -3,6 +3,8 @@ export const SIZE_UNITS = [
   { value: 'kg', label: 'Kilogram (kg)' },
   { value: 'ml', label: 'Millilitre (ml)' },
   { value: 'l', label: 'Litre (L)' },
+  { value: 'cm', label: 'Centimetre (cm)' },
+  { value: 'mtr', label: 'Metre (mtr)' },
 ];
 
 export function getProductVariants(product) {

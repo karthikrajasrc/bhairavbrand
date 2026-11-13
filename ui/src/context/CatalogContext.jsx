@@ -50,24 +50,17 @@ export function CatalogProvider({ children }) {
 
   const value = useMemo(() => {
     const categoryBySlug = Object.fromEntries(categories.map((category) => [category.slug, category]));
-    const roots = categories.filter((category) => !category.parentId);
-    const childrenOf = (parent) => categories.filter((category) => category.parentId === parent._id);
     const getProduct = (id) => products.find((product) => product._id === String(id));
-    const byCategory = (slug, subcategory = '') => products.filter((product) => (
-      (slug === 'all' || product.category === slug)
-      && (!subcategory || product.subcategory === subcategory)
-    ));
+    const byCategory = (slug) => products.filter((product) => slug === 'all' || product.category === slug);
     return {
       products,
       categories,
-      roots,
       loading,
       error,
       refresh,
       addCategory,
       removeCategory,
       categoryBySlug,
-      childrenOf,
       getProduct,
       byCategory,
     };

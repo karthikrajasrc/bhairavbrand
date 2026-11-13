@@ -6,6 +6,7 @@ export default function AdminImageField({
   file,
   onChange,
   label = 'Product image',
+  recommendedDimensions = '1200 × 1200 px (square)',
   required = false,
   existingUrl = '',
   onRemoveExisting,
@@ -37,7 +38,7 @@ export default function AdminImageField({
           type="file"
         />
       </label>
-      <small>JPEG, PNG, WebP, AVIF or TIFF · max 8 MB. Other formats are converted to WebP; WebP is preserved.</small>
+      <small>Recommended: {recommendedDimensions}. JPEG, PNG, WebP, AVIF or TIFF · max 8 MB. Other formats are converted to WebP; WebP is preserved.</small>
       {preview?.file === file && (
         <div className="admin-image-preview">
           <span className="admin-image-preview-art">

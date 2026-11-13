@@ -5,14 +5,6 @@ import { useCart } from '../../context/CartContext.jsx';
 import { useCatalog } from '../../context/CatalogContext.jsx';
 import Reveal from '../ui/Reveal.jsx';
 
-const categoryPath = (category, categories) => {
-  if (!category) return '/collections/all';
-  const parent = categories.find((item) => item._id === category.parentId);
-  return parent
-    ? `/collections/${parent.slug}/${category.slug}`
-    : `/collections/${category.slug}`;
-};
-
 export default function CategoryShortcuts() {
   const { categories, error } = useCatalog();
   const { notify } = useCart();
@@ -39,16 +31,14 @@ export default function CategoryShortcuts() {
     if (error) notify(error, 'error');
   }, [error, notify]);
 
-  const roots = categories
-    .filter((category) => !category.parentId)
-    .sort((a, b) => a.name.localeCompare(b.name));
-  const offersTarget = roots.find((category) => category.slug === 'combos');
+  const sortedCategories = [...categories].sort((a, b) => a.name.localeCompare(b.name));
+  const offersTarget = sortedCategories.find((category) => category.slug === 'combos');
   const shortcuts = [
     ...(shortcutIcons.offersIconUrl
       ? [{
         label: 'Offers',
         imageUrl: shortcutIcons.offersIconUrl,
-        to: offersTarget ? categoryPath(offersTarget, categories) : '/collections/all',
+        to: offersTarget ? `/collections/${offersTarget.slug}` : '/collections/all',
       }]
       : []),
     {
@@ -56,10 +46,10 @@ export default function CategoryShortcuts() {
       imageUrl: shortcutIcons.shopAllIconUrl,
       to: '/collections/all',
     },
-    ...roots.map((category) => ({
+    ...sortedCategories.map((category) => ({
       label: category.name,
       imageUrl: category.iconUrl,
-      to: categoryPath(category, categories),
+      to: `/collections/${category.slug}`,
     })),
   ];
 

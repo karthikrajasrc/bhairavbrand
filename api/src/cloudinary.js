@@ -13,7 +13,7 @@ export function createCloudinaryImageUploader({ cloudName, apiKey, apiSecret }) 
 
   return ({ buffer }) => new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream({
-      folder: 'banyan-basket',
+      folder: 'bhairav-brand',
       public_id: randomUUID(),
       resource_type: 'image',
       overwrite: false,

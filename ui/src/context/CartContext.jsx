@@ -65,6 +65,7 @@ export function CartProvider({ children }) {
       return next;
     });
   }, []);
+  const clear = useCallback(() => setItems({}), []);
 
   const lines = useMemo(
     () => Object.entries(items).map(([key, item]) => {
@@ -79,7 +80,7 @@ export function CartProvider({ children }) {
   const count = lines.reduce((a, l) => a + l.qty, 0);
   const subtotal = lines.reduce((total, line) => total + line.qty * line.variant.price, 0);
 
-  const value = { lines, count, subtotal, add, setQty, toast, notify };
+  const value = { lines, count, subtotal, add, setQty, clear, toast, notify };
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 }
 

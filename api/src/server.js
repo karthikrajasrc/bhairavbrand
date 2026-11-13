@@ -1,8 +1,8 @@
 import 'dotenv/config';
 import { createApp } from './app.js';
 import { createCloudinaryImageUploader } from './cloudinary.js';
-import { connectDatabase, disconnectDatabase } from './database.js';
-import { Banner, Category, Product, Session, StoreSettings, User } from './models.js';
+import { connectDatabase, disconnectDatabase } from './config/database.js';
+import { Category, Order, Product, Session, StoreSettings, User } from './models/index.js';
 
 const port = Number(process.env.API_PORT || 4000);
 const uiOrigin = process.env.UI_ORIGIN || 'http://localhost:5173';
@@ -30,7 +30,7 @@ const app = createApp({
   Product,
   Category,
   StoreSettings,
-  Banner,
+  Order,
   uploadImage: createCloudinaryImageUploader({
     cloudName: process.env.CLOUDINARY_CLOUD_NAME,
     apiKey: process.env.CLOUDINARY_API_KEY,
@@ -39,11 +39,13 @@ const app = createApp({
   uiOrigin,
   googleClientId: process.env.GOOGLE_CLIENT_ID || '',
   adminEmail: process.env.ADMIN_EMAIL || 'admin@bb.com',
+  razorpayKeyId: process.env.RAZORPAY_KEY_ID || '',
+  razorpayKeySecret: process.env.RAZORPAY_KEY_SECRET || '',
   nodeEnv: process.env.NODE_ENV || 'development',
   trustProxyHops,
 });
 
-const server = app.listen(port, () => console.log(`Banyan Basket API listening on port ${port}`));
+const server = app.listen(port, () => console.log(`Bhairav Brand API listening on port ${port}`));
 let shuttingDown = false;
 const shutdown = () => {
   if (shuttingDown) return;

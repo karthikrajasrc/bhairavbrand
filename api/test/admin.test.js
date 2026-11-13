@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
+import { createHmac } from 'node:crypto';
 import { after, before, test } from 'node:test';
 import sharp from 'sharp';
 import { createApp } from '../src/app.js';
-import { Banner, Category, Product, StoreSettings, User } from '../src/models.js';
+import { Category, Order, Product, StoreSettings, User } from '../src/models/index.js';
 import { prepareImage } from '../src/imageProcessing.js';
 
 const uiOrigin = 'http://localhost:5173';
@@ -10,7 +11,8 @@ const users = [];
 const sessions = [];
 const products = [];
 const categories = [];
-const banners = [];
+const orders = [];
+const razorpayResponses = [];
 let storeSettings = null;
 let nextId = 1;
 let server;
@@ -23,6 +25,9 @@ const matches = (document, filter) => Object.entries(filter).every(([key, value]
     return value.$exists ? key in document : !(key in document);
   }
   if (value && typeof value === 'object' && '$gt' in value) return document[key] > value.$gt;
+  if (value && typeof value === 'object' && '$in' in value) {
+    return value.$in.includes(document[key]?.toString());
+  }
   return document[key] === value;
 });
 const query = (operation) => {
@@ -72,8 +77,14 @@ const FakeProduct = {
   create: async (input) => {
     const product = {
       ...input,
+      variants: (input.variants || []).map((variant) => ({ ...variant, _id: nextObjectId() })),
       _id: nextObjectId(),
-      set(values) { Object.assign(this, values); },
+      set(values) {
+        Object.assign(this, values);
+        if (values.variants) {
+          this.variants = values.variants.map((variant) => ({ ...variant, _id: nextObjectId() }));
+        }
+      },
       async save() { return this; },
     };
     products.push(product);
@@ -128,17 +139,19 @@ const FakeStoreSettings = {
   },
 };
 
-const FakeBanner = {
+const FakeOrder = {
   create: async (input) => {
-    const banner = { ...input, _id: nextObjectId() };
-    banners.push(banner);
-    return banner;
+    const order = {
+      ...input,
+      _id: nextObjectId(),
+      createdAt: new Date(),
+      async save() { return this; },
+    };
+    orders.push(order);
+    return order;
   },
-  find: (filter) => query(() => banners.filter((item) => matches(item, filter))),
-  findByIdAndDelete: async (id) => {
-    const index = banners.findIndex((item) => item._id === id);
-    return index < 0 ? null : banners.splice(index, 1)[0];
-  },
+  find: (filter) => query(() => orders.filter((item) => matches(item, filter))),
+  findById: (id) => query(() => orders.find((item) => item._id === id) || null),
 };
 
 before(async () => {
@@ -148,7 +161,17 @@ before(async () => {
     Product: FakeProduct,
     Category: FakeCategory,
     StoreSettings: FakeStoreSettings,
-    Banner: FakeBanner,
+    Order: FakeOrder,
+    razorpayKeyId: 'rzp_test_id',
+    razorpayKeySecret: 'test_razorpay_secret',
+    fetchImpl: async () => {
+      const responseBody = razorpayResponses.shift();
+      if (!responseBody) throw new Error('No mocked Razorpay response is queued');
+      return new Response(JSON.stringify(responseBody), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    },
     uiOrigin,
     uploadImage: async ({ buffer, format }) => {
       uploadedImage = { buffer, format };
@@ -178,13 +201,15 @@ test('admin role model and persisted store models have expected constraints', ()
   assert.deepEqual(User.schema.path('role').options.enum, ['customer', 'admin']);
   assert.equal(Product.schema.path('name').options.required, true);
   assert.equal(Category.schema.path('slug').options.required, true);
-  assert.equal(typeof Category.schema.path('imageUrl').options.required, 'function');
-  assert.equal(new Category({ name: 'Root', slug: 'root' }).validateSync().errors.imageUrl.path, 'imageUrl');
-  assert.equal(new Category({ name: 'Child', slug: 'child', parentId: '0123456789abcdef01234567' }).validateSync(), undefined);
+  assert.equal(Category.schema.path('imageUrl'), undefined);
+  assert.equal(Category.schema.path('parentId'), undefined);
+  assert.equal(Product.schema.path('subcategory'), undefined);
+  assert.equal(new Category({ name: 'Pantry', slug: 'pantry' }).validateSync(), undefined);
+  assert.equal(new Category({ name: 'Pantry', slug: 'pantry' }).iconUrl, '');
   assert.equal(Product.schema.path('imageUrl').options.required, true);
-  assert.equal(Product.schema.path('showOnHome').options.default, false);
+  assert.equal(Order.schema.path('razorpayOrderId').options.required, true);
+  assert.equal(Product.schema.path('showOnHome'), undefined);
   assert.equal(Product.schema.path('description').options.default, '');
-  assert.equal(new Product().showOnHome, false);
   assert.deepEqual(new Product().benefits, []);
   const mainImage = 'https://res.cloudinary.com/test/image/upload/main.webp';
   const galleryProduct = new Product({
@@ -213,7 +238,6 @@ test('admin role model and persisted store models have expected constraints', ()
   });
   assert.equal(invalidGallery.validateSync().errors.images.path, 'images');
   assert.ok(StoreSettings.schema.indexes().some(([fields, options]) => fields.key === 1 && options.unique));
-  assert.equal(Banner.schema.path('imageUrl').options.required, true);
 });
 
 test('image processing converts supported uploads to WebP and preserves WebP bytes', async () => {
@@ -245,7 +269,7 @@ test('image processing converts supported uploads to WebP and preserves WebP byt
   await assert.rejects(prepareImage(Buffer.from('not an image')), /valid supported image/);
 });
 
-test('verified admin Google identity can manage products, delivery charges, and banners', async () => {
+test('verified admin Google identity can manage products and delivery charges', async () => {
   const post = (path, body, cookie) => fetch(`${baseUrl}${path}`, {
     method: 'POST',
     headers: {
@@ -259,6 +283,7 @@ test('verified admin Google identity can manage products, delivery charges, and 
   const unauthenticated = await fetch(`${baseUrl}/api/admin/products`);
   assert.equal(unauthenticated.status, 401);
   assert.equal((await fetch(`${baseUrl}/api/admin/categories`)).status, 401);
+  assert.equal((await fetch(`${baseUrl}/api/admin/orders`)).status, 401);
 
   const preregisteredAdmin = await post('/api/auth/register', {
     name: 'Admin Account',
@@ -278,19 +303,10 @@ test('verified admin Google identity can manage products, delivery charges, and 
   assert.equal(users[0].passwordHash, undefined);
   const adminCookie = adminLogin.headers.get('set-cookie').split(';')[0];
 
-  const missingCategoryImage = await post('/api/admin/categories', {
-    name: 'No Image',
-    slug: 'no-image',
-    parentId: null,
-  }, adminCookie);
-  assert.equal(missingCategoryImage.status, 400);
-
   const categoryResponse = await post('/api/admin/categories', {
     name: 'Pantry Staples',
     slug: 'pantry-staples',
-    imageUrl: 'https://res.cloudinary.com/test/image/upload/category.webp',
     iconUrl: 'https://res.cloudinary.com/test/image/upload/category-icon.webp',
-    parentId: null,
   }, adminCookie);
   assert.equal(categoryResponse.status, 201);
   const categoryData = await categoryResponse.json();
@@ -298,18 +314,25 @@ test('verified admin Google identity can manage products, delivery charges, and 
   const duplicateCategory = await post('/api/admin/categories', {
     name: 'Another Pantry',
     slug: 'pantry-staples',
-    imageUrl: 'https://res.cloudinary.com/test/image/upload/category.webp',
-    parentId: null,
   }, adminCookie);
   assert.equal(duplicateCategory.status, 409);
-  const subcategoryResponse = await post('/api/admin/categories', {
+  const legacyCategoryFields = await post('/api/admin/categories', {
     name: 'Millets',
     slug: 'millets',
+    imageUrl: 'https://res.cloudinary.com/test/image/upload/category.webp',
     parentId: categoryData.category._id,
   }, adminCookie);
-  assert.equal(subcategoryResponse.status, 201);
-  const subcategoryData = await subcategoryResponse.json();
-  assert.equal(subcategoryData.category.imageUrl, '');
+  assert.equal(legacyCategoryFields.status, 400);
+  const iconOnlyCategory = await post('/api/admin/categories', {
+    name: 'Millets',
+    slug: 'millets',
+    iconUrl: 'https://res.cloudinary.com/test/image/upload/millets-icon.webp',
+  }, adminCookie);
+  assert.equal(iconOnlyCategory.status, 201);
+  const iconOnlyCategoryData = await iconOnlyCategory.json();
+  assert.equal(iconOnlyCategoryData.category.iconUrl, 'https://res.cloudinary.com/test/image/upload/millets-icon.webp');
+  assert.equal('imageUrl' in iconOnlyCategoryData.category, false);
+  assert.equal('parentId' in iconOnlyCategoryData.category, false);
   assert.equal((await (await fetch(`${baseUrl}/api/storefront/categories`)).json()).categories.length, 2);
 
   const shortcutIcons = {
@@ -383,6 +406,7 @@ test('verified admin Google identity can manage products, delivery charges, and 
   const customerCookie = customerSignup.headers.get('set-cookie').split(';')[0];
   const forbidden = await fetch(`${baseUrl}/api/admin/products`, { headers: { Cookie: customerCookie } });
   assert.equal(forbidden.status, 403);
+  assert.equal((await fetch(`${baseUrl}/api/admin/orders`, { headers: { Cookie: customerCookie } })).status, 403);
   const forbiddenUpdate = await fetch(`${baseUrl}/api/admin/products/0123456789abcdef01234567`, {
     method: 'PUT',
     headers: { Origin: uiOrigin, 'Content-Type': 'application/json', Cookie: customerCookie },
@@ -390,11 +414,24 @@ test('verified admin Google identity can manage products, delivery charges, and 
   });
   assert.equal(forbiddenUpdate.status, 403);
 
+  const customer = users.find((user) => user.email === 'customer@example.com');
+  customer.role = 'admin';
+  try {
+    const forgedAdminProfile = await fetch(`${baseUrl}/api/auth/me`, {
+      headers: { Cookie: customerCookie },
+    });
+    assert.equal((await forgedAdminProfile.json()).user.role, 'customer');
+    const forgedAdminAccess = await fetch(`${baseUrl}/api/admin/products`, {
+      headers: { Cookie: customerCookie },
+    });
+    assert.equal(forgedAdminAccess.status, 403);
+  } finally {
+    customer.role = 'customer';
+  }
+
   const product = await post('/api/admin/products', {
     name: 'Groundnut Oil 1 L',
     category: 'pantry-staples',
-    showOnHome: true,
-    subcategory: 'millets',
     shortDescription: 'Traditional groundnut oil for everyday cooking.',
     highlights: ['Wood pressed', 'No added preservatives'],
     description: 'Made in small batches using traditional methods.',
@@ -407,6 +444,8 @@ test('verified admin Google identity can manage products, delivery charges, and 
     variants: [
       { amount: 500, unit: 'ml', price: 259, mrp: 299 },
       { amount: 1, unit: 'l', price: 479, mrp: 599 },
+      { amount: 10, unit: 'cm', price: 25, mrp: 30 },
+      { amount: 1, unit: 'mtr', price: 100, mrp: 120 },
     ],
     imageUrl: imageData.imageUrl,
     images: [
@@ -418,7 +457,6 @@ test('verified admin Google identity can manage products, delivery charges, and 
   assert.equal(product.status, 201);
   const productData = await product.json();
   assert.equal(productData.product.name, 'Groundnut Oil 1 L');
-  assert.equal(productData.product.showOnHome, true);
   assert.equal(productData.product.shortDescription, 'Traditional groundnut oil for everyday cooking.');
   assert.deepEqual(productData.product.highlights, ['Wood pressed', 'No added preservatives']);
   assert.equal(productData.product.description, 'Made in small batches using traditional methods.');
@@ -430,6 +468,8 @@ test('verified admin Google identity can manage products, delivery charges, and 
   assert.deepEqual(productData.product.variants.map(({ amount, unit }) => ({ amount, unit })), [
     { amount: 500, unit: 'ml' },
     { amount: 1, unit: 'l' },
+    { amount: 10, unit: 'cm' },
+    { amount: 1, unit: 'mtr' },
   ]);
   assert.equal(productData.product.price, 259);
   assert.equal(productData.product.mrp, 299);
@@ -446,32 +486,16 @@ test('verified admin Google identity can manage products, delivery charges, and 
     body: JSON.stringify({
       name: 'Pantry Goods',
       slug: 'pantry-goods',
-      imageUrl: 'https://res.cloudinary.com/test/image/upload/category-new.webp',
-      parentId: null,
+      iconUrl: 'https://res.cloudinary.com/test/image/upload/category-new-icon.webp',
     }),
   });
   assert.equal(categoryUpdate.status, 200);
   assert.equal((await categoryUpdate.json()).category.slug, 'pantry-goods');
   assert.equal(products[0].category, 'pantry-goods');
 
-  const subcategoryUpdate = await fetch(`${baseUrl}/api/admin/categories/${subcategoryData.category._id}`, {
-    method: 'PUT',
-    headers: { Origin: uiOrigin, 'Content-Type': 'application/json', Cookie: adminCookie },
-    body: JSON.stringify({
-      name: 'Millet Flour',
-      slug: 'millet-flour',
-      imageUrl: '',
-      parentId: categoryData.category._id,
-    }),
-  });
-  assert.equal(subcategoryUpdate.status, 200);
-  assert.equal(products[0].subcategory, 'millet-flour');
-
   const productUpdateBody = {
     name: 'Groundnut Oil, 1 Litre',
     category: 'pantry-goods',
-    showOnHome: false,
-    subcategory: 'millet-flour',
     shortDescription: 'Freshly pressed groundnut oil.',
     highlights: ['Wood pressed'],
     description: 'Updated product details.',
@@ -493,7 +517,6 @@ test('verified admin Google identity can manage products, delivery charges, and 
   assert.equal(productUpdate.status, 200);
   const updatedProductData = await productUpdate.json();
   assert.equal(updatedProductData.product.name, productUpdateBody.name);
-  assert.equal(updatedProductData.product.showOnHome, false);
   assert.equal(updatedProductData.product.price, 250);
   assert.equal(updatedProductData.product.description, 'Updated product details.');
   assert.deepEqual(updatedProductData.product.images, [imageData.imageUrl]);
@@ -508,12 +531,20 @@ test('verified admin Google identity can manage products, delivery charges, and 
   const invalidProduct = await post('/api/admin/products', {
     name: 'Bad price',
     category: 'pantry-staples',
-    subcategory: 'millets',
     price: 600,
     mrp: 500,
     imageUrl: imageData.imageUrl,
   }, adminCookie);
   assert.equal(invalidProduct.status, 400);
+  const legacyProductField = await post('/api/admin/products', {
+    name: 'Nested product',
+    category: 'pantry-goods',
+    subcategory: 'millets',
+    price: 10,
+    mrp: 10,
+    imageUrl: imageData.imageUrl,
+  }, adminCookie);
+  assert.equal(legacyProductField.status, 400);
 
   const tooManyHighlights = await post('/api/admin/products', {
     name: 'Too many highlights',
@@ -572,11 +603,11 @@ test('verified admin Google identity can manage products, delivery charges, and 
     headers: { Origin: uiOrigin, Cookie: adminCookie },
   });
   assert.equal(categoryInUse.status, 409);
-  const subcategoryInUse = await fetch(`${baseUrl}/api/admin/categories/${subcategoryData.category._id}`, {
+  const removedUnusedCategory = await fetch(`${baseUrl}/api/admin/categories/${iconOnlyCategoryData.category._id}`, {
     method: 'DELETE',
     headers: { Origin: uiOrigin, Cookie: adminCookie },
   });
-  assert.equal(subcategoryInUse.status, 409);
+  assert.equal(removedUnusedCategory.status, 204);
   const missingProductImage = await post('/api/admin/products', {
     name: 'Missing image',
     category: 'pantry-staples',
@@ -597,14 +628,97 @@ test('verified admin Google identity can manage products, delivery charges, and 
     { deliveryCharge: 49, freeShippingThreshold: 999 },
   );
 
-  const banner = await post('/api/admin/banners', {
-    title: 'Festive collection',
-    imageUrl: imageData.imageUrl,
-  }, adminCookie);
-  assert.equal(banner.status, 201);
-  const storefrontBanners = (await (await fetch(`${baseUrl}/api/storefront/banners`)).json()).banners;
-  assert.equal(storefrontBanners.length, 1);
-  assert.equal('link' in storefrontBanners[0], false);
+  const checkoutBody = {
+    customer: {
+      name: 'Buyer Example',
+      email: 'buyer@example.com',
+      phone: '+919876543210',
+      address: {
+        line1: '123 Market Road',
+        line2: 'Near the temple',
+        city: 'Chennai',
+        state: 'Tamil Nadu',
+        postalCode: '600001',
+      },
+    },
+    items: [{
+      productId: productData.product._id,
+      variantId: updatedProductData.product.variants[0]._id,
+      quantity: 2,
+    }],
+  };
+  const clientPricedCheckout = await post('/api/checkout/orders', {
+    ...checkoutBody,
+    items: [{ ...checkoutBody.items[0], unitPricePaise: 1 }],
+  });
+  assert.equal(clientPricedCheckout.status, 400);
+
+  razorpayResponses.push({
+    id: 'order_test001',
+    amount: 54900,
+    currency: 'INR',
+    status: 'created',
+  });
+  const checkoutResponse = await post('/api/checkout/orders', checkoutBody);
+  assert.equal(checkoutResponse.status, 201);
+  const checkoutData = await checkoutResponse.json();
+  assert.equal(checkoutData.order.totalPaise, 54900);
+  assert.equal(checkoutData.order.deliveryChargePaise, 4900);
+  assert.equal(checkoutData.order.keyId, 'rzp_test_id');
+
+  const pendingOrders = await fetch(`${baseUrl}/api/admin/orders`, {
+    headers: { Cookie: adminCookie },
+  });
+  assert.deepEqual((await pendingOrders.json()).orders, []);
+
+  const paymentCallback = {
+    razorpay_order_id: 'order_test001',
+    razorpay_payment_id: 'pay_test001',
+    razorpay_signature: createHmac('sha256', 'test_razorpay_secret')
+      .update('order_test001|pay_test001')
+      .digest('hex'),
+  };
+  const invalidPayment = await post(
+    `/api/checkout/orders/${checkoutData.order.id}/verify`,
+    { ...paymentCallback, razorpay_signature: '0'.repeat(64) },
+  );
+  assert.equal(invalidPayment.status, 400);
+
+  razorpayResponses.push({
+    id: 'pay_test001',
+    order_id: 'order_test001',
+    amount: 54900,
+    currency: 'INR',
+    status: 'authorized',
+  }, {
+    id: 'pay_test001',
+    order_id: 'order_test001',
+    amount: 54900,
+    currency: 'INR',
+    status: 'captured',
+  });
+  const verifiedPayment = await post(
+    `/api/checkout/orders/${checkoutData.order.id}/verify`,
+    paymentCallback,
+  );
+  assert.equal(verifiedPayment.status, 200);
+  assert.equal((await verifiedPayment.json()).order.paymentStatus, 'paid');
+
+  const paidOrdersResponse = await fetch(`${baseUrl}/api/admin/orders`, {
+    headers: { Cookie: adminCookie },
+  });
+  const paidOrders = (await paidOrdersResponse.json()).orders;
+  assert.equal(paidOrders.length, 1);
+  assert.equal(paidOrders[0].status, 'new');
+  assert.equal(paidOrders[0].customer.email, 'buyer@example.com');
+  assert.equal(paidOrders[0].items[0].lineTotalPaise, 50000);
+
+  const removedAdminBannersApi = await fetch(`${baseUrl}/api/admin/banners`, {
+    headers: { Cookie: adminCookie },
+  });
+  assert.equal(removedAdminBannersApi.status, 404);
+  const removedStorefrontBannersApi = await fetch(`${baseUrl}/api/storefront/banners`);
+  assert.equal(removedStorefrontBannersApi.status, 404);
 
   const removed = await fetch(`${baseUrl}/api/admin/products/${productData.product._id}`, {
     method: 'DELETE',

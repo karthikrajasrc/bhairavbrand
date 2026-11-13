@@ -5,8 +5,8 @@ import Reveal from '../ui/Reveal.jsx';
 import { useCatalog } from '../../context/CatalogContext.jsx';
 
 export default function TopPicks() {
-  const { roots, byCategory } = useCatalog();
-  const categories = roots.slice(0, 4);
+  const { categories: allCategories, byCategory } = useCatalog();
+  const categories = allCategories.slice(0, 4);
   const [tab, setTab] = useState('');
   const activeTab = categories.some((category) => category.slug === tab) ? tab : categories[0]?.slug;
   const products = byCategory(activeTab || 'all').slice(0, 8);

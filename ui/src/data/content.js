@@ -1,6 +1,6 @@
 export const announcements = [
   'Save 15% on your first purchase with code WELCOME',
-  '✨ Goodness from our kitchen to yours — discover the Banyan Basket difference.',
+  '✨ From code to devotion — discover the Bhairav Brand story.',
   'Pure, natural & lab tested — free shipping above ₹999',
 ];
 
@@ -11,7 +11,7 @@ export const testimonials = [
 ];
 
 export const aboutText = [
-  'Banyan Basket began with a simple idea: a banyan tree feeds, shades and shelters generations, and a good kitchen should do the same.',
-  'We bring together Indian grocery staples, cold-pressed oils, pure ghee and natural wellness essentials, sourced directly from farms and small producers we trust.',
-  'Every pack is chosen for purity and tradition—so your family eats well, every single day.',
+  'Bhairav Brand began with a new journey from code to devotion, bringing tradition and modern craft together.',
+  'We create devotional essentials and fragrances inspired by the rituals and moments that bring people together.',
+  'Every detail reflects our respect for tradition and our intention to make everyday rituals more meaningful.',
 ];

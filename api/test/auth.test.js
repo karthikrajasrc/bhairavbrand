@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { createApp } from '../src/app.js';
-import { User, Session } from '../src/models.js';
+import { User, Session } from '../src/models/index.js';
 
 const uiOrigin = 'http://localhost:5173';
 const users = [];

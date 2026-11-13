@@ -31,7 +31,7 @@ const mealMoments = [
 ];
 
 export default function Process() {
-  const { roots } = useCatalog();
+  const { categories } = useCatalog();
 
   return (
     <section className="sec meal-moments">
@@ -43,7 +43,7 @@ export default function Process() {
         </Reveal>
         <Reveal className="meal-moments-grid rev-stagger">
           {mealMoments.map((moment) => {
-            const category = roots.find((item) => moment.terms.some((term) => (
+            const category = categories.find((item) => moment.terms.some((term) => (
               `${item.name} ${item.slug}`.toLowerCase().includes(term)
             )));
             return (

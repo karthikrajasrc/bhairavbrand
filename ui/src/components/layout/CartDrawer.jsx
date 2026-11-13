@@ -3,7 +3,7 @@ import { useCart } from '../../context/CartContext.jsx';
 import { money } from '../../data/products.js';
 
 export default function CartDrawer({ open, onClose }) {
-  const { lines, subtotal, setQty, notify } = useCart();
+  const { lines, subtotal, setQty } = useCart();
   return (
     <aside className={`dr r${open ? ' on' : ''}`} aria-label="Cart" aria-hidden={!open}>
       <div className="dh"><h3>Your Cart</h3><button className="ib" onClick={onClose} aria-label="Close cart">✕</button></div>
@@ -34,7 +34,7 @@ export default function CartDrawer({ open, onClose }) {
         <div className="df">
           <p><span>Subtotal</span><span>{money(subtotal)}</span></p>
           <small style={{ color: 'var(--mut)' }}>Taxes and shipping calculated at checkout{subtotal >= 999 ? ' · Free shipping applied 🎉' : ''}</small>
-          <button className="btn" onClick={() => notify('Checkout connects to your payment gateway')}>Check out</button>
+          <Link className="btn" to="/checkout" onClick={onClose}>Check out</Link>
         </div>
       )}
     </aside>

@@ -1,9 +1,29 @@
 import { useEffect, useRef, useState } from 'react';
-import { apiRequest } from '../../context/AuthContext.jsx';
-import { useCart } from '../../context/CartContext.jsx';
 import Reveal from '../ui/Reveal.jsx';
 
-function UploadedBannerCarousel({ banners }) {
+const mainBanner = {
+  _id: 'bhairav-brand-main-banner',
+  imageUrl: '/assets/desktop-banner-1.webp',
+  mobileImageUrl: '/assets/mobile-banner-1.webp',
+  title: 'Bhairav Brand — Premium Devotional Essentials',
+};
+
+const secondBanner = {
+  _id: 'bhairav-brand-second-banner',
+  imageUrl: '/assets/desktop-banner-2.webp',
+  mobileImageUrl: '/assets/mobile-banner-2.webp',
+  title: 'Bhairav Brand — Fragrance and Incense',
+};
+
+const thirdBanner = {
+  _id: 'bhairav-brand-third-banner',
+  imageUrl: '/assets/desktop-banner-3.webp',
+  mobileImageUrl: '/assets/mobile-banner-3.webp',
+  title: 'Bhairav Brand — Complete Devotional Essentials',
+};
+
+function BannerCarousel() {
+  const displayBanners = [mainBanner, secondBanner, thirdBanner];
   const [activePage, setActivePage] = useState(0);
   const [activeMobileBanner, setActiveMobileBanner] = useState(0);
   const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 720px)').matches);
@@ -11,8 +31,8 @@ function UploadedBannerCarousel({ banners }) {
   const mobileTrackRef = useRef(null);
   const touchStart = useRef(null);
   const swiped = useRef(false);
-  const pages = Array.from({ length: Math.ceil(banners.length / 3) }, (_, index) => (
-    banners.slice(index * 3, index * 3 + 3)
+  const pages = Array.from({ length: Math.ceil(displayBanners.length / 3) }, (_, index) => (
+    displayBanners.slice(index * 3, index * 3 + 3)
   ));
 
   useEffect(() => {
@@ -31,17 +51,17 @@ function UploadedBannerCarousel({ banners }) {
   }, [isMobile, pages.length]);
 
   useEffect(() => {
-    if (!isMobile || banners.length < 2) return undefined;
+    if (!isMobile || displayBanners.length < 2) return undefined;
     const timer = window.setInterval(() => {
-      setActiveMobileBanner((active) => Math.min(active + 1, banners.length));
+      setActiveMobileBanner((active) => Math.min(active + 1, displayBanners.length));
     }, 3000);
     return () => window.clearInterval(timer);
-  }, [banners.length, isMobile]);
+  }, [displayBanners.length, isMobile]);
 
   const showPage = (index) => setActivePage((index + pages.length) % pages.length);
   const showMobileBanner = (index) => {
     setMobileTransitionEnabled(true);
-    setActiveMobileBanner((index + banners.length) % banners.length);
+    setActiveMobileBanner((index + displayBanners.length) % displayBanners.length);
   };
   const handleTouchStart = (event) => {
     touchStart.current = event.touches[0]?.clientX ?? null;
@@ -61,7 +81,7 @@ function UploadedBannerCarousel({ banners }) {
     touchStart.current = null;
   };
   const handleMobileTransitionEnd = (event) => {
-    if (event.target !== mobileTrackRef.current || activeMobileBanner !== banners.length) return;
+    if (event.target !== mobileTrackRef.current || activeMobileBanner !== displayBanners.length) return;
     setMobileTransitionEnabled(false);
     setActiveMobileBanner(0);
     window.requestAnimationFrame(() => {
@@ -110,7 +130,12 @@ function UploadedBannerCarousel({ banners }) {
                 const props = {
                   className: `uploaded-banner-slide${index === 0 ? ' uploaded-banner-main' : ' uploaded-banner-side'}`,
                 };
-                const image = <img src={banner.imageUrl} alt={banner.title} fetchpriority={pageIndex === 0 ? 'high' : 'auto'} />;
+                const image = (
+                  <picture>
+                    {banner.mobileImageUrl && <source media="(max-width: 720px)" srcSet={banner.mobileImageUrl} />}
+                    <img src={banner.imageUrl} alt={banner.title} fetchPriority={pageIndex === 0 ? 'high' : 'auto'} />
+                  </picture>
+                );
                 return <div {...props} key={banner._id}>{image}</div>;
               })}
             </div>
@@ -125,25 +150,30 @@ function UploadedBannerCarousel({ banners }) {
             style={{ transform: `translateX(-${activeMobileBanner * 100}%)` }}
             onTransitionEnd={handleMobileTransitionEnd}
           >
-            {banners.map((banner) => (
+            {displayBanners.map((banner, index) => (
               <div className="uploaded-banner-mobile-slide" key={banner._id}>
-                <img src={banner.imageUrl} alt={banner.title} loading="lazy" />
+                <img
+                  src={banner.mobileImageUrl || banner.imageUrl}
+                  alt={banner.title}
+                  loading={index === 0 ? 'eager' : 'lazy'}
+                  fetchPriority={index === 0 ? 'high' : 'auto'}
+                />
               </div>
             ))}
-            {banners.length > 1 && (
-              <div className="uploaded-banner-mobile-slide" aria-hidden="true" key={`${banners[0]._id}-mobile-clone`}>
-                <img src={banners[0].imageUrl} alt="" loading="lazy" />
+            {displayBanners.length > 1 && (
+              <div className="uploaded-banner-mobile-slide" aria-hidden="true" key={`${displayBanners[0]._id}-mobile-clone`}>
+                <img src={displayBanners[0].mobileImageUrl || displayBanners[0].imageUrl} alt="" loading="lazy" />
               </div>
             )}
           </div>
         </div>
-        {banners.length > 1 && (
+        {displayBanners.length > 1 && (
           <div className="uploaded-banner-mobile-dots" aria-label="Choose a banner">
-            {banners.map((banner, index) => (
+            {displayBanners.map((banner, index) => (
               <button type="button" key={banner._id}
-                className={index === activeMobileBanner % banners.length ? 'on' : ''}
+                className={index === activeMobileBanner % displayBanners.length ? 'on' : ''}
                 aria-label={`Show banner ${index + 1}`}
-                aria-current={index === activeMobileBanner % banners.length ? 'true' : undefined}
+                aria-current={index === activeMobileBanner % displayBanners.length ? 'true' : undefined}
                 onClick={() => showMobileBanner(index)} />
             ))}
           </div>
@@ -170,25 +200,5 @@ function UploadedBannerCarousel({ banners }) {
 }
 
 export default function Hero() {
-  const [banners, setBanners] = useState([]);
-  const [loaded, setLoaded] = useState(false);
-  const { notify } = useCart();
-
-  useEffect(() => {
-    let active = true;
-    apiRequest('/api/storefront/banners')
-      .then(({ banners: currentBanners }) => {
-        if (active) setBanners(currentBanners);
-      })
-      .catch((error) => {
-        if (active) notify(error.message, 'error');
-      })
-      .finally(() => {
-        if (active) setLoaded(true);
-      });
-    return () => { active = false; };
-  }, [notify]);
-
-  if (!loaded) return <Reveal className="home-banner-loading" aria-hidden="true" />;
-  return banners.length > 0 ? <UploadedBannerCarousel banners={banners} /> : null;
+  return <BannerCarousel />;
 }

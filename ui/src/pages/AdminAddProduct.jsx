@@ -8,13 +8,12 @@ import { uploadImage } from '../lib/uploadImage.js';
 import { SIZE_UNITS } from '../data/productVariants.js';
 
 const initialProduct = {
-  name: '', category: '', subcategory: '', shortDescription: '', description: '',
-  nutritionInfo: '', howToUse: '', storageInstructions: '', showOnHome: false,
+  name: '', category: '', description: '',
 };
 const newSize = () => ({ amount: '', unit: 'kg', price: '', mrp: '' });
 
 export default function AdminAddProduct() {
-  const { roots, childrenOf, refresh } = useCatalog();
+  const { categories, refresh } = useCatalog();
   const { notify } = useCart();
   const { id } = useParams();
   const editing = Boolean(id);
@@ -24,8 +23,6 @@ export default function AdminAddProduct() {
   const [imageFiles, setImageFiles] = useState([null, null, null]);
   const [savedImages, setSavedImages] = useState([null, null, null]);
   const [sizes, setSizes] = useState([newSize()]);
-  const [highlights, setHighlights] = useState([]);
-  const [benefits, setBenefits] = useState([]);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -38,13 +35,10 @@ export default function AdminAddProduct() {
       setProduct({
         ...initialProduct,
         ...existing,
-        subcategory: existing.subcategory || '',
       });
       setSizes(existing.variants?.length
         ? existing.variants.map(({ amount, unit, price, mrp }) => ({ amount: String(amount), unit, price: String(price), mrp: String(mrp) }))
         : [{ amount: '', unit: 'kg', price: String(existing.price), mrp: String(existing.mrp) }]);
-      setHighlights(existing.highlights || []);
-      setBenefits(existing.benefits || []);
       setSavedImages((existing.images?.length ? existing.images : [existing.imageUrl])
         .slice(0, 3).concat([null, null, null]).slice(0, 3));
     }).catch((requestError) => {
@@ -65,13 +59,6 @@ export default function AdminAddProduct() {
     setImageFiles((current) => current.map((image, imageIndex) => (
       imageIndex === index ? file : image
     )));
-  };
-  const setListItem = (setter, index, value) => {
-    setter((current) => current.map((item, itemIndex) => (itemIndex === index ? value : item)));
-  };
-  const addListItem = (setter) => setter((current) => [...current, '']);
-  const removeListItem = (setter, index) => {
-    setter((current) => current.filter((_, itemIndex) => itemIndex !== index));
   };
 
   const submit = async (event) => {
@@ -105,15 +92,7 @@ export default function AdminAddProduct() {
       const payload = {
         name: product.name,
         category: product.category,
-        subcategory: product.subcategory || '',
-        shortDescription: product.shortDescription,
         description: product.description,
-        nutritionInfo: product.nutritionInfo,
-        howToUse: product.howToUse,
-        storageInstructions: product.storageInstructions,
-        showOnHome: product.showOnHome === true,
-        highlights: highlights.map((item) => item.trim()).filter(Boolean),
-        benefits: benefits.map((item) => item.trim()).filter(Boolean),
         imageUrl: images[0],
         images,
         price: variants[0]?.price ?? Number(sizes[0].price),
@@ -141,7 +120,7 @@ export default function AdminAddProduct() {
         <Link className="admin-back-link" to="/admin/products">← All products</Link>
       </div>
       {loadingProduct && <p className="admin-message" role="status">Loading product…</p>}
-      {roots.length === 0 && (
+      {categories.length === 0 && (
         <p className="admin-message">Create a category before adding products. <Link to="/admin/categories">Manage categories</Link></p>
       )}
       {!loadingProduct && <form className="admin-panel admin-form admin-product-form" onSubmit={submit}>
@@ -150,32 +129,10 @@ export default function AdminAddProduct() {
             onChange={(event) => setField('name', event.target.value)} />
         </label>
         <label>Category
-          <select required value={product.category} onChange={(event) => {
-            setField('category', event.target.value);
-            setField('subcategory', '');
-          }}>
+          <select required value={product.category} onChange={(event) => setField('category', event.target.value)}>
             <option value="">Select category</option>
-            {roots.map((category) => <option key={category._id} value={category.slug}>{category.name}</option>)}
+            {categories.map((category) => <option key={category._id} value={category.slug}>{category.name}</option>)}
           </select>
-        </label>
-        <label>Subcategory
-          <select value={product.subcategory} onChange={(event) => setField('subcategory', event.target.value)}>
-            <option value="">No subcategory</option>
-            {childrenOf(roots.find((category) => category.slug === product.category) || {}).map((category) => (
-              <option key={category._id} value={category.slug}>{category.name}</option>
-            ))}
-          </select>
-        </label>
-        <label className="admin-homepage-featured admin-wide">
-          <input
-            checked={product.showOnHome}
-            onChange={(event) => setField('showOnHome', event.target.checked)}
-            type="checkbox"
-          />
-          <span>
-            <strong>Show this product on the homepage</strong>
-            <small>Featured grocery products appear in the pantry section. Combo products appear in the combos section.</small>
-          </span>
         </label>
         <fieldset className="admin-product-sizes admin-wide">
           <legend>Product sizes and prices</legend>
@@ -231,61 +188,14 @@ export default function AdminAddProduct() {
         </fieldset>
         <fieldset className="admin-product-details admin-wide">
           <legend>Product details for the product page</legend>
-          <label className="admin-wide">Short description
-            <textarea maxLength="320" rows="3" value={product.shortDescription}
-              onChange={(event) => setField('shortDescription', event.target.value)}
-              placeholder="A concise summary shown beside the product image." />
-          </label>
-          <div className="admin-detail-list">
-            <span className="admin-detail-list-label">Highlights</span>
-            <p className="admin-form-intro">Short points displayed as product badges.</p>
-            {highlights.map((item, index) => (
-              <div className="admin-detail-list-row" key={`highlight-${index}`}>
-                <input aria-label={`Highlight ${index + 1}`} maxLength="100" value={item}
-                  onChange={(event) => setListItem(setHighlights, index, event.target.value)} />
-                <button className="admin-remove" onClick={() => removeListItem(setHighlights, index)}
-                  type="button" aria-label={`Remove highlight ${index + 1}`}>Remove</button>
-              </div>
-            ))}
-            <button className="btn o" disabled={highlights.length >= 8}
-              onClick={() => addListItem(setHighlights)} type="button">Add highlight</button>
-          </div>
           <label className="admin-wide">Description
             <textarea maxLength="5000" rows="6" value={product.description}
               onChange={(event) => setField('description', event.target.value)}
               placeholder="Explain how the product is made and what makes it distinctive." />
           </label>
-          <div className="admin-detail-list">
-            <span className="admin-detail-list-label">Product benefits</span>
-            {benefits.map((item, index) => (
-              <div className="admin-detail-list-row" key={`benefit-${index}`}>
-                <input aria-label={`Product benefit ${index + 1}`} maxLength="240" value={item}
-                  onChange={(event) => setListItem(setBenefits, index, event.target.value)} />
-                <button className="admin-remove" onClick={() => removeListItem(setBenefits, index)}
-                  type="button" aria-label={`Remove benefit ${index + 1}`}>Remove</button>
-              </div>
-            ))}
-            <button className="btn o" disabled={benefits.length >= 12}
-              onClick={() => addListItem(setBenefits)} type="button">Add benefit</button>
-          </div>
-          <label>Nutritional information
-            <textarea maxLength="3000" rows="5" value={product.nutritionInfo}
-              onChange={(event) => setField('nutritionInfo', event.target.value)}
-              placeholder="Enter verified nutrition facts, one item per line." />
-          </label>
-          <label>How to use
-            <textarea maxLength="2000" rows="5" value={product.howToUse}
-              onChange={(event) => setField('howToUse', event.target.value)}
-              placeholder="Add preparation or usage instructions." />
-          </label>
-          <label className="admin-wide">Storage instructions
-            <textarea maxLength="1200" rows="3" value={product.storageInstructions}
-              onChange={(event) => setField('storageInstructions', event.target.value)}
-              placeholder="Explain how customers should store the product." />
-          </label>
         </fieldset>
         <div className="admin-form-actions admin-wide">
-          <button className="btn" disabled={saving || roots.length === 0} type="submit">
+          <button className="btn" disabled={saving || categories.length === 0} type="submit">
             {saving ? 'Saving…' : editing ? 'Save changes' : 'Add product'}
           </button>
           <Link className="btn o" to="/admin/products">Cancel</Link>

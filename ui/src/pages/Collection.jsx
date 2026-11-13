@@ -13,22 +13,20 @@ const SORTS = {
 };
 
 export default function Collection() {
-  const { slug, subcategory } = useParams();
+  const { slug } = useParams();
   const [sort, setSort] = useState('featured');
   const { categories, categoryBySlug, byCategory, loading, error } = useCatalog();
   const { notify } = useCart();
   const category = categoryBySlug[slug];
-  const subcategoryRecord = categoryBySlug[subcategory];
-  const title = slug === 'all' ? 'All Products' : subcategoryRecord?.name || category?.name;
+  const title = slug === 'all' ? 'All Products' : category?.name;
   const list = useMemo(() => {
-    const matching = byCategory(slug, subcategory || '');
+    const matching = byCategory(slug);
     return sort === 'featured' ? matching : [...matching].sort(SORTS[sort]);
-  }, [byCategory, slug, sort, subcategory]);
+  }, [byCategory, slug, sort]);
   useEffect(() => {
     if (error) notify(error, 'error');
   }, [error, notify]);
-  if (!loading && slug !== 'all' && (!category || category.parentId)) return <NotFound />;
-  if (!loading && subcategory && (!subcategoryRecord || subcategoryRecord.parentId !== category?._id)) return <NotFound />;
+  if (!loading && slug !== 'all' && !category) return <NotFound />;
 
   return (
     <>
@@ -38,12 +36,11 @@ export default function Collection() {
           <Reveal className="tb">
             <div className="chips">
               <Link to="/collections/all" className={slug === 'all' ? 'on' : ''}>All Products</Link>
-              {category && <Link to={`/collections/${slug}`} className={!subcategory ? 'on' : ''}>{category.name}</Link>}
-              {category && categories
-                .filter((item) => item.parentId === category._id)
-                .map((item) => (
-                  <Link key={item._id} to={`/collections/${slug}/${item.slug}`} className={subcategory === item.slug ? 'on' : ''}>{item.name}</Link>
-                ))}
+              {categories.map((item) => (
+                <Link key={item._id} to={`/collections/${item.slug}`} className={slug === item.slug ? 'on' : ''}>
+                  {item.name}
+                </Link>
+              ))}
             </div>
             <label>
               <span style={{ marginRight: 8, color: 'var(--mut)' }}>{list.length} items · Sort</span>
