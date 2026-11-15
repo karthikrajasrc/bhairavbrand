@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { apiRequest } from '../context/AuthContext.jsx';
 import { useCart } from '../context/CartContext.jsx';
 import { money } from '../data/products.js';
+import { WHATSAPP_NUMBER } from '../lib/contact.js';
 
 const initialCustomer = {
   name: '',
@@ -16,6 +17,22 @@ const initialCustomer = {
     postalCode: '',
   },
 };
+
+const isCheckoutQuote = (quote, itemCount) => (
+  quote
+  && Array.isArray(quote.items)
+  && quote.items.length === itemCount
+  && quote.items.every((item) => (
+    typeof item.productId === 'string'
+    && typeof item.name === 'string'
+    && Number.isSafeInteger(item.unitPricePaise)
+    && Number.isSafeInteger(item.lineTotalPaise)
+    && Number.isInteger(item.quantity)
+  ))
+  && Number.isSafeInteger(quote.subtotalPaise)
+  && Number.isSafeInteger(quote.deliveryChargePaise)
+  && Number.isSafeInteger(quote.totalPaise)
+);
 
 const loadRazorpay = () => new Promise((resolve, reject) => {
   if (window.Razorpay) {
@@ -33,13 +50,60 @@ const loadRazorpay = () => new Promise((resolve, reject) => {
 });
 
 export default function Checkout() {
-  const { lines, subtotal, clear } = useCart();
+  const { lines, clear } = useCart();
+  const formRef = useRef(null);
+  const quoteRequestId = useRef(0);
+  const checkoutItems = useMemo(() => lines.map(({ product, variant, qty }) => ({
+    productId: product._id,
+    variantId: String(variant.id),
+    quantity: qty,
+  })), [lines]);
   const [customer, setCustomer] = useState(initialCustomer);
   const [processing, setProcessing] = useState(false);
+  const [preparingWhatsApp, setPreparingWhatsApp] = useState(false);
+  const [quote, setQuote] = useState(null);
+  const [quoteLoading, setQuoteLoading] = useState(true);
+  const [quoteError, setQuoteError] = useState('');
   const [error, setError] = useState('');
   const [confirmation, setConfirmation] = useState(null);
   const [verificationRetry, setVerificationRetry] = useState(null);
   const [serverTotals, setServerTotals] = useState(null);
+
+  const fetchQuote = useCallback(async () => {
+    const result = await apiRequest('/api/checkout/quote', {
+      method: 'POST',
+      body: { items: checkoutItems },
+    });
+    if (!isCheckoutQuote(result.quote, checkoutItems.length)) {
+      throw new Error('The API returned invalid checkout prices.');
+    }
+    return result.quote;
+  }, [checkoutItems]);
+
+  const loadQuote = useCallback(async () => {
+    const requestId = quoteRequestId.current + 1;
+    quoteRequestId.current = requestId;
+    if (checkoutItems.length === 0) {
+      setQuote(null);
+      setQuoteLoading(false);
+      setQuoteError('');
+      return;
+    }
+    setQuote(null);
+    setServerTotals(null);
+    setQuoteLoading(true);
+    setQuoteError('');
+    try {
+      const nextQuote = await fetchQuote();
+      if (requestId === quoteRequestId.current) setQuote(nextQuote);
+    } catch (requestError) {
+      if (requestId === quoteRequestId.current) setQuoteError(requestError.message);
+    } finally {
+      if (requestId === quoteRequestId.current) setQuoteLoading(false);
+    }
+  }, [checkoutItems.length, fetchQuote]);
+
+  useEffect(() => { loadQuote(); }, [loadQuote]);
 
   const setCustomerField = (field, value) => {
     setCustomer((current) => ({ ...current, [field]: value }));
@@ -49,6 +113,65 @@ export default function Checkout() {
       ...current,
       address: { ...current.address, [field]: value },
     }));
+  };
+
+  const orderViaWhatsApp = async () => {
+    setError('');
+    if (!formRef.current?.reportValidity()) return;
+    const phoneDigits = customer.phone.replace(/\D/g, '');
+    if (phoneDigits.length < 10 || phoneDigits.length > 15) {
+      setError('Enter a valid phone number with 10 to 15 digits.');
+      return;
+    }
+    if (!quote || quoteLoading || quoteError) {
+      setError('Current database prices are not available. Retry loading prices before continuing.');
+      return;
+    }
+
+    const whatsappWindow = window.open('about:blank', '_blank');
+    if (!whatsappWindow) {
+      setError('Your browser blocked the WhatsApp tab. Allow pop-ups and try again.');
+      return;
+    }
+    whatsappWindow.opener = null;
+    setPreparingWhatsApp(true);
+    try {
+      const currentQuote = await fetchQuote();
+      setQuote(currentQuote);
+      setServerTotals(null);
+      const address = [
+        customer.address.line1,
+        customer.address.line2,
+        `${customer.address.city}, ${customer.address.state} ${customer.address.postalCode}`,
+      ].filter(Boolean).join('\n');
+      const productDetails = currentQuote.items.map((item, index) => (
+        `${index + 1}. ${item.name}${item.variantLabel ? ` (${item.variantLabel})` : ''} × ${item.quantity} — ${money(item.lineTotalPaise / 100)}`
+      )).join('\n');
+      const message = [
+        'Hello Bhairav Brand, I would like to place this order via WhatsApp.',
+        '',
+        'Customer details:',
+        `Name: ${customer.name}`,
+        `Email: ${customer.email}`,
+        `Phone: ${customer.phone}`,
+        '',
+        'Delivery address:',
+        address,
+        '',
+        'Products:',
+        productDetails,
+        '',
+        `Subtotal: ${money(currentQuote.subtotalPaise / 100)}`,
+        `Delivery: ${currentQuote.deliveryChargePaise ? money(currentQuote.deliveryChargePaise / 100) : 'Free'}`,
+        `Total amount: ${money(currentQuote.totalPaise / 100)}`,
+      ].join('\n');
+      whatsappWindow.location.href = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
+    } catch (requestError) {
+      whatsappWindow.close();
+      setError(`Could not prepare your WhatsApp order: ${requestError.message}`);
+    } finally {
+      setPreparingWhatsApp(false);
+    }
   };
 
   const verifyPayment = async (order, payment) => {
@@ -72,6 +195,10 @@ export default function Checkout() {
 
   const submit = async (event) => {
     event.preventDefault();
+    if (!quote || quoteLoading || quoteError) {
+      setError('Current database prices are not available. Retry loading prices before continuing.');
+      return;
+    }
     setProcessing(true);
     setError('');
     setVerificationRetry(null);
@@ -90,6 +217,7 @@ export default function Checkout() {
       });
       const { order } = result;
       setServerTotals(order);
+      if (isCheckoutQuote(order, checkoutItems.length)) setQuote(order);
       await loadRazorpay();
       if (!window.Razorpay) throw new Error('Razorpay checkout did not load. Please try again.');
 
@@ -121,6 +249,8 @@ export default function Checkout() {
     }
   };
 
+  const displayedTotals = serverTotals || quote;
+
   return (
     <section className="checkout-page">
       <div className="checkout-heading">
@@ -134,6 +264,7 @@ export default function Checkout() {
           <h2>Thank you for your order</h2>
           <p>Payment is confirmed. Your order number is <strong>{confirmation.orderNumber}</strong>.</p>
           <p>Total paid: <strong>{money(confirmation.totalPaise / 100)}</strong></p>
+          <Link className="btn o" to="/track-order">Track this order</Link>
           <Link className="btn" to="/collections/all">Continue shopping</Link>
         </div>
       ) : lines.length === 0 ? (
@@ -144,7 +275,7 @@ export default function Checkout() {
         </div>
       ) : (
         <div className="checkout-layout">
-          <form className="checkout-panel checkout-form" onSubmit={submit}>
+          <form className="checkout-panel checkout-form" id="checkout-details-form" onSubmit={submit} ref={formRef}>
             <h2>Delivery details</h2>
             <label className="checkout-field">
               Full name
@@ -189,43 +320,74 @@ export default function Checkout() {
                 value={customer.address.postalCode}
                 onChange={(event) => setAddressField('postalCode', event.target.value)} />
             </label>
-            {error && <p className="checkout-error" role="alert">{error}</p>}
-            {verificationRetry && (
-              <button className="btn o checkout-retry" disabled={processing}
-                onClick={() => verifyPayment(verificationRetry.order, verificationRetry.payment)} type="button">
-                Retry payment verification
-              </button>
-            )}
-            <button className="btn checkout-submit" disabled={processing} type="submit">
-              {processing ? 'Please wait…' : 'Pay securely with Razorpay'}
-            </button>
           </form>
 
           <aside className="checkout-panel checkout-summary">
             <h2>Order summary</h2>
             <div className="checkout-summary-items">
-              {lines.map(({ key, product, variant, qty }) => (
-                <div className="checkout-summary-item" key={key}>
-                  <img src={product.imageUrl} alt="" />
+              {quoteLoading && <p role="status">Loading current product prices and delivery charge…</p>}
+              {quoteError && <p className="checkout-error" role="alert">
+                Could not load current database prices: {quoteError}
+              </p>}
+              {quote?.items.map((item) => (
+                <div className="checkout-summary-item" key={`${item.productId}:${item.variantId}`}>
+                  <img src={item.imageUrl} alt="" />
                   <div>
-                    <strong>{product.name}</strong>
-                    {variant.label && <small>{variant.label}</small>}
-                    <small>Qty: {qty}</small>
+                    <strong>{item.name}</strong>
+                    {item.variantLabel && <small>{item.variantLabel}</small>}
+                    <small>Qty: {item.quantity}</small>
                   </div>
-                  <strong>{money(variant.price * qty)}</strong>
+                  <strong>{money(item.lineTotalPaise / 100)}</strong>
                 </div>
               ))}
             </div>
             <div className="checkout-summary-total">
-              <p><span>Subtotal</span><span>{money((serverTotals?.subtotalPaise ?? Math.round(subtotal * 100)) / 100)}</span></p>
-              <p><span>Delivery</span><span>{serverTotals
-                ? (serverTotals.deliveryChargePaise ? money(serverTotals.deliveryChargePaise / 100) : 'Free')
-                : 'Calculated at checkout'}</span></p>
-              <p className="checkout-grand-total"><strong>Total</strong><strong>{serverTotals
-                ? money(serverTotals.totalPaise / 100)
-                : money(subtotal)}</strong></p>
+              <p><span>Subtotal</span><span>{displayedTotals
+                ? money(displayedTotals.subtotalPaise / 100)
+                : '—'}</span></p>
+              <p><span>Delivery</span><span>{displayedTotals
+                ? (displayedTotals.deliveryChargePaise
+                  ? money(displayedTotals.deliveryChargePaise / 100)
+                  : 'Free')
+                : quoteError ? 'Unavailable' : '—'}</span></p>
+              <p className="checkout-grand-total"><strong>Total</strong><strong>{displayedTotals
+                ? money(displayedTotals.totalPaise / 100)
+                : '—'}</strong></p>
             </div>
-            <p className="checkout-secure-note">The server verifies and confirms your payment before sending this order to the store.</p>
+            <div className="checkout-summary-actions">
+              {error && <p className="checkout-error" role="alert">{error}</p>}
+              {quoteError && (
+                <button className="btn o checkout-retry" disabled={quoteLoading || processing || preparingWhatsApp}
+                  onClick={loadQuote} type="button">
+                  Retry loading prices
+                </button>
+              )}
+              {verificationRetry && (
+                <button className="btn o checkout-retry" disabled={processing || preparingWhatsApp}
+                  onClick={() => verifyPayment(verificationRetry.order, verificationRetry.payment)} type="button">
+                  Retry payment verification
+                </button>
+              )}
+              <button className="btn checkout-whatsapp"
+                disabled={processing || preparingWhatsApp || quoteLoading || !quote || Boolean(quoteError)}
+                onClick={orderViaWhatsApp} type="button">
+                {preparingWhatsApp ? 'Preparing WhatsApp order…' : 'Order via WhatsApp'}
+              </button>
+              <button className="btn checkout-submit"
+                disabled={processing || preparingWhatsApp || quoteLoading || !quote || Boolean(quoteError)}
+                form="checkout-details-form" type="submit">
+                <span>{processing ? 'Please wait…' : `PAY ${displayedTotals ? money(displayedTotals.totalPaise / 100) : ''}`}</span>
+                <span className="checkout-payment-methods" aria-hidden="true">
+                  <span className="checkout-payment-mark"><img src="/assets/payment-google-pay.jpg" alt="" /></span>
+                  <span className="checkout-payment-mark checkout-payment-paytm"><img src="/assets/payment-paytm.jpg" alt="" /></span>
+                  <span className="checkout-payment-mark checkout-payment-phonepe"><img src="/assets/payment-phonepe.jpg" alt="" /></span>
+                  <span className="checkout-payment-mark"><img src="/assets/payment-bhim.jpg" alt="" /></span>
+                </span>
+              </button>
+            </div>
+            <p className="checkout-secure-note">
+              Razorpay payments are verified by the server. WhatsApp opens with your order details ready to review and send.
+            </p>
           </aside>
         </div>
       )}

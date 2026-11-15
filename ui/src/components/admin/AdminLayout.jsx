@@ -7,6 +7,7 @@ const links = [
   { to: '/admin/categories', label: 'Categories' },
   { to: '/admin/delivery', label: 'Delivery' },
   { to: '/admin/orders', label: 'Orders', badge: 'New' },
+  { to: '/admin/reviews', label: 'Reviews' },
 ];
 
 export default function AdminLayout() {

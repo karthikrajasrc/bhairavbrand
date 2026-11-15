@@ -20,8 +20,8 @@ export default function MobileDrawer({ open, onClose }) {
           </div>
         </details>
         <div className="row"><Link to="/about" onClick={onClose}>About</Link></div>
-        <div className="row"><a href="#contact" onClick={onClose}>Contact Us</a></div>
-        <div className="row"><Link to="/collections/all" data-track onClick={onClose}>Track Order</Link></div>
+        <div className="row"><Link to="/contact" onClick={onClose}>Contact Us</Link></div>
+        <div className="row"><Link to="/track-order" data-track onClick={onClose}>Track Order</Link></div>
       </div>
     </aside>
   );

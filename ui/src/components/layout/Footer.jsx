@@ -7,7 +7,7 @@ export default function Footer() {
   const sortedCategories = [...categories].sort((a, b) => a.name.localeCompare(b.name));
 
   return (
-    <footer className="site-footer" id="contact">
+    <footer className="site-footer">
       <div className="w">
         <Reveal className="site-footer-grid rev-stagger">
           <div className="site-footer-brand">
@@ -19,6 +19,11 @@ export default function Footer() {
               rituals feel meaningful.
             </p>
             <span className="site-footer-tagline">Rooted in tradition. Made for everyday life.</span>
+            <div className="site-footer-contact">
+              <h2>Get in touch</h2>
+              <a href="tel:+917871780414">+91 78717 80414</a>
+              <address>Madurai, Tamil Nadu</address>
+            </div>
           </div>
 
           <nav className="site-footer-column" aria-label="Shop categories">
@@ -35,16 +40,19 @@ export default function Footer() {
             <h2>Discover</h2>
             <Link to="/">Home</Link>
             <Link to="/about">Our story</Link>
+            <Link to="/contact">Contact us</Link>
+            <Link to="/track-order">Track order</Link>
             <Link to="/account">Your account</Link>
-            <div className="site-footer-assurance">
-              <span className="site-footer-assurance-mark" aria-hidden="true">✓</span>
-              <p>
-                <strong>Secure checkout</strong>
-                <span>Payments are handled securely by Razorpay.</span>
-              </p>
-            </div>
           </div>
         </Reveal>
+
+        <div className="site-footer-assurance">
+          <span className="site-footer-assurance-mark" aria-hidden="true">✓</span>
+          <p>
+            <strong>Secure checkout</strong>
+            <span>Payments are handled securely by Razorpay.</span>
+          </p>
+        </div>
 
         <div className="site-footer-bottom">
           <span>© {new Date().getFullYear()} Bhairav Brand. All rights reserved.</span>

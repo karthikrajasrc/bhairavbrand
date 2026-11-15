@@ -1,29 +1,28 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import ProductRail from '../components/ui/ProductRail.jsx';
 import Reveal from '../components/ui/Reveal.jsx';
 import NotFound from './NotFound.jsx';
 import { useCart } from '../context/CartContext.jsx';
 import { money } from '../data/products.js';
 import { useCatalog } from '../context/CatalogContext.jsx';
-import { getProductVariants } from '../data/productVariants.js';
+import { getProductVariants, startingVariant } from '../data/productVariants.js';
 
 export default function Product() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { products, categories, getProduct, loading, error } = useCatalog();
   const product = getProduct(id);
-  const [qty, setQty] = useState(1);
   const [selectedVariantId, setSelectedVariantId] = useState('');
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [activeDetail, setActiveDetail] = useState('');
-  const { add, notify } = useCart();
+  const { add, getItemQty, setQty: setCartQty, notify } = useCart();
   useEffect(() => {
     if (error) notify(error, 'error');
   }, [error, notify]);
   useEffect(() => {
     setSelectedImageIndex(0);
     setSelectedVariantId('');
-    setQty(1);
     setActiveDetail('');
   }, [id]);
   if (loading) return <main className="w sec"><p>Loading product…</p></main>;
@@ -33,7 +32,9 @@ export default function Product() {
     ? product.images.slice(0, 3)
     : [product.imageUrl];
   const variants = getProductVariants(product);
-  const selectedVariant = variants.find((variant) => variant.id === selectedVariantId) || variants[0];
+  const selectedVariant = variants.find((variant) => variant.id === selectedVariantId) || startingVariant(product);
+  const cartQty = getItemQty(product._id, selectedVariant.id);
+  const cartKey = `${product._id}::${selectedVariant.id}`;
   const selectedDiscount = selectedVariant.mrp > selectedVariant.price
     ? Math.round((1 - selectedVariant.price / selectedVariant.mrp) * 100)
     : 0;
@@ -47,16 +48,21 @@ export default function Product() {
   const selectedDetail = detailTabs.find((tab) => tab.id === activeDetail) || detailTabs[0];
   const related = products.filter((p) => p.category === product.category && p._id !== product._id).slice(0, 6);
   const category = categories.find((item) => item.slug === product.category);
+  const goBack = () => {
+    if (window.history.state?.idx > 0) navigate(-1);
+    else navigate('/collections/all', { replace: true });
+  };
   return (
     <>
-      <nav className="w product-breadcrumbs" aria-label="Breadcrumb">
-        <Link to="/">Home</Link><span aria-hidden="true">/</span>
-        <Link to={`/collections/${product.category}`}>{category?.name || 'Shop'}</Link>
-        <span aria-hidden="true">/</span><span aria-current="page">{product.name}</span>
-      </nav>
       <section className="sec" style={{ paddingBottom: 20 }}>
         <Reveal className="w pd">
           <div className="product-gallery">
+            <button className="product-mobile-back" type="button" onClick={goBack}>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M19 12H5m7 7-7-7 7-7" />
+              </svg>
+              Back
+            </button>
             <div className="big">
               <img src={images[selectedImageIndex] || product.imageUrl} alt={product.name} />
             </div>
@@ -77,13 +83,18 @@ export default function Product() {
             <h1>{product.name}</h1>
             <p className="product-pack-weight">Product weight: <b>{selectedVariant.label || 'Standard pack'}</b></p>
             {variants.length > 1 && (
-              <label className="product-size-select">Available pack sizes
-                <select value={selectedVariant.id} onChange={(event) => setSelectedVariantId(event.target.value)}>
+              <div className="product-size-select">
+                <span className="product-size-select-label" id="product-size-select-label">Available pack sizes</span>
+                <div className="product-size-options" role="group" aria-labelledby="product-size-select-label">
                   {variants.map((variant) => (
-                    <option key={variant.id} value={variant.id}>{variant.label}</option>
+                    <button className={`product-size-option${variant.id === selectedVariant.id ? ' selected' : ''}`}
+                      key={variant.id} type="button" aria-pressed={variant.id === selectedVariant.id}
+                      onClick={() => setSelectedVariantId(variant.id)}>
+                      {variant.label}
+                    </button>
                   ))}
-                </select>
-              </label>
+                </div>
+              </div>
             )}
             {product.shortDescription && <p className="product-short-description">{product.shortDescription}</p>}
             {product.highlights?.length > 0 && (
@@ -101,13 +112,21 @@ export default function Product() {
                 <span className="tg" style={{ position: 'static' }}>Save {selectedDiscount}%</span>
               </>}
             </div>
-            <div className="buy">
-              <div className="q lg">
-                <button onClick={() => setQty((q) => Math.max(1, q - 1))} aria-label="Decrease quantity">−</button>
-                <span>{qty}</span>
-                <button onClick={() => setQty((q) => q + 1)} aria-label="Increase quantity">+</button>
-              </div>
-              <button className="btn" onClick={() => add(product._id, qty, selectedVariant)}>Add to cart</button>
+            <div className={`buy${cartQty ? ' product-in-cart' : ''}`}>
+              {cartQty ? (
+                <>
+                  <button className="btn product-added" disabled type="button">✓ Added</button>
+                  <div className="q lg product-detail-cart-quantity" aria-label={`Quantity of ${product.name} in cart`}>
+                    <button onClick={() => setCartQty(cartKey, cartQty - 1)}
+                      aria-label={`Remove one ${product.name}`}>−</button>
+                    <span aria-live="polite">{cartQty}</span>
+                    <button disabled={cartQty >= 99} onClick={() => setCartQty(cartKey, cartQty + 1)}
+                      aria-label={`Add one ${product.name}`}>+</button>
+                  </div>
+                </>
+              ) : (
+                <button className="btn" onClick={() => add(product._id, 1, selectedVariant)}>Add to cart</button>
+              )}
             </div>
             <p className="product-delivery-note">Shipping and delivery charges are shown at checkout.</p>
           </aside>

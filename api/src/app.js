@@ -6,6 +6,7 @@ import helmet from 'helmet';
 import { createAdminController } from './controllers/adminController.js';
 import { createAuthController } from './controllers/authController.js';
 import { createCheckoutController } from './controllers/checkoutController.js';
+import { createContactController } from './controllers/contactController.js';
 import { createStorefrontController } from './controllers/storefrontController.js';
 import { createAuthMiddleware } from './middleware/auth.js';
 import { errorHandler } from './middleware/errorHandler.js';
@@ -14,6 +15,7 @@ import { requireRequestOrigin } from './middleware/requestOrigin.js';
 import { createAdminRoutes } from './routes/adminRoutes.js';
 import { createAuthRoutes } from './routes/authRoutes.js';
 import { createCheckoutRoutes } from './routes/checkoutRoutes.js';
+import { createContactRoutes } from './routes/contactRoutes.js';
 import { createStorefrontRoutes } from './routes/storefrontRoutes.js';
 import { createRazorpayService } from './services/razorpayService.js';
 
@@ -24,6 +26,8 @@ export function createApp({
   Category,
   StoreSettings,
   Order,
+  ContactInquiry,
+  Review,
   uploadImage,
   uiOrigin,
   googleClientId = '',
@@ -57,6 +61,13 @@ export function createApp({
     legacyHeaders: false,
     message: { error: 'Too many checkout attempts. Please try again later.' },
   });
+  const contactLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 10,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: { error: 'Too many requests. Please try again later.' },
+  });
 
   app.disable('x-powered-by');
   if (trustProxyHops > 0) app.set('trust proxy', trustProxyHops);
@@ -81,17 +92,20 @@ export function createApp({
     adminEmail,
     verifyGoogleCredential,
   });
-  const storefrontController = createStorefrontController({ Product, Category, StoreSettings });
+  const storefrontController = createStorefrontController({ Product, Category, StoreSettings, Review });
   const checkoutController = createCheckoutController({ Product, StoreSettings, Order, razorpay });
+  const contactController = createContactController({ ContactInquiry, Order });
   const adminController = createAdminController({
     Category,
     Product,
     StoreSettings,
     Order,
+    Review,
     uploadImage,
   });
 
   app.use('/api', createStorefrontRoutes({ controller: storefrontController }));
+  app.use('/api', createContactRoutes({ controller: contactController, limiter: contactLimiter }));
   app.use('/api/auth', createAuthRoutes({
     controller: authController,
     limiter: authLimiter,

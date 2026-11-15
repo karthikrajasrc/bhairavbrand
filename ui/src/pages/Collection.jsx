@@ -30,7 +30,7 @@ export default function Collection() {
 
   return (
     <>
-      <PageHeader title={title || 'Shop'} crumbs={[{ label: 'Shop', to: '/collections/all' }, { label: title || 'Shop' }]} />
+      <PageHeader title={title || 'Shop'} />
       <section className="sec" style={{ paddingTop: 36 }}>
         <div className="w product-catalog-content">
           <Reveal className="tb">

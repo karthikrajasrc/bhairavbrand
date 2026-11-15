@@ -5,10 +5,12 @@ import { money } from '../../data/products.js';
 import { getProductVariants, startingVariant } from '../../data/productVariants.js';
 
 export default function ProductCard({ product: p, hoverSecondaryImage = false }) {
-  const { add } = useCart();
+  const { add, getItemQty, setQty } = useCart();
   const variants = getProductVariants(p);
   const [selectedVariantId, setSelectedVariantId] = useState(() => startingVariant(p).id);
   const variant = variants.find((item) => item.id === selectedVariantId) || startingVariant(p);
+  const cartQty = getItemQty(p._id, variant.id);
+  const cartKey = `${p._id}::${variant.id}`;
   const secondaryImage = hoverSecondaryImage && Array.isArray(p.images)
     ? p.images.find((image) => typeof image === 'string' && image && image !== p.imageUrl)
     : null;
@@ -52,11 +54,23 @@ export default function ProductCard({ product: p, hoverSecondaryImage = false })
           </span>
         ) : null}
         <div className="pr"><b>{money(variant.price)}</b>{off > 0 && <s>{money(variant.mrp)}</s>}</div>
-        <button className="add" aria-label={`Add ${p.name}${variant.label ? `, ${variant.label}` : ''} to cart`}
-          onClick={() => add(p._id, 1, variant)}>
-          Add to cart
-          {variant.label && <span className="product-card-add-size"> · {variant.label}</span>}
-        </button>
+        {cartQty ? (
+          <div className="product-card-cart-state">
+            <button className="add product-card-added" disabled type="button">✓ Added</button>
+            <div className="q product-card-cart-quantity" aria-label={`Quantity of ${p.name} in cart`}>
+              <button onClick={() => setQty(cartKey, cartQty - 1)} aria-label={`Remove one ${p.name}`}>−</button>
+              <span aria-live="polite">{cartQty}</span>
+              <button disabled={cartQty >= 99} onClick={() => setQty(cartKey, cartQty + 1)}
+                aria-label={`Add one ${p.name}`}>+</button>
+            </div>
+          </div>
+        ) : (
+          <button className="add" aria-label={`Add ${p.name}${variant.label ? `, ${variant.label}` : ''} to cart`}
+            onClick={() => add(p._id, 1, variant)}>
+            Add to cart
+            {variant.label && <span className="product-card-add-size"> · {variant.label}</span>}
+          </button>
+        )}
       </div>
     </article>
   );

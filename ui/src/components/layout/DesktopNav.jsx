@@ -32,8 +32,8 @@ export default function DesktopNav() {
           </div>
         </li>
         <li><Link to="/about">About</Link></li>
-        <li><a href="#contact">Contact Us</a></li>
-        <li><Link to="/collections/all" data-track>Track Order</Link></li>
+        <li><Link to="/contact">Contact Us</Link></li>
+        <li><Link to="/track-order" data-track>Track Order</Link></li>
       </ul>
     </nav>
   );

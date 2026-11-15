@@ -5,6 +5,7 @@ import {
   deliverySchema,
   objectIdSchema,
   productSchema,
+  reviewSchema,
 } from '../validation/schemas.js';
 
 export function createAdminController({
@@ -12,6 +13,7 @@ export function createAdminController({
   Product,
   StoreSettings,
   Order,
+  Review,
   uploadImage,
 }) {
   return {
@@ -105,6 +107,34 @@ export function createAdminController({
       try {
         const orders = await Order.find({ paymentStatus: 'paid' }).sort({ createdAt: -1 });
         return res.json({ orders });
+      } catch (error) {
+        return next(error);
+      }
+    },
+
+    reviews: async (_req, res, next) => {
+      try {
+        return res.json({ reviews: await Review.find({}).sort({ createdAt: -1 }) });
+      } catch (error) {
+        return next(error);
+      }
+    },
+
+    createReview: async (req, res, next) => {
+      try {
+        const input = reviewSchema.parse(req.body);
+        return res.status(201).json({ review: await Review.create(input) });
+      } catch (error) {
+        return next(error);
+      }
+    },
+
+    deleteReview: async (req, res, next) => {
+      try {
+        const id = objectIdSchema.parse(req.params.id);
+        const review = await Review.findByIdAndDelete(id);
+        if (!review) return res.status(404).json({ error: 'Review not found' });
+        return res.status(204).end();
       } catch (error) {
         return next(error);
       }

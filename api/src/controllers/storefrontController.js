@@ -1,4 +1,4 @@
-export function createStorefrontController({ Product, Category, StoreSettings }) {
+export function createStorefrontController({ Product, Category, StoreSettings, Review }) {
   return {
     health: (_req, res) => res.json({ status: 'ok' }),
 
@@ -13,6 +13,14 @@ export function createStorefrontController({ Product, Category, StoreSettings })
     categories: async (_req, res, next) => {
       try {
         return res.json({ categories: await Category.find({}).sort({ name: 1 }) });
+      } catch (error) {
+        return next(error);
+      }
+    },
+
+    reviews: async (_req, res, next) => {
+      try {
+        return res.json({ reviews: await Review.find({}).sort({ createdAt: -1 }) });
       } catch (error) {
         return next(error);
       }

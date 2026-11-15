@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { createApp } from './app.js';
 import { createCloudinaryImageUploader } from './cloudinary.js';
 import { connectDatabase, disconnectDatabase } from './config/database.js';
-import { Category, Order, Product, Session, StoreSettings, User } from './models/index.js';
+import { Category, ContactInquiry, Order, Product, Review, Session, StoreSettings, User } from './models/index.js';
 
 const port = Number(process.env.API_PORT || 4000);
 const uiOrigin = process.env.UI_ORIGIN || 'http://localhost:5173';
@@ -31,6 +31,8 @@ const app = createApp({
   Category,
   StoreSettings,
   Order,
+  ContactInquiry,
+  Review,
   uploadImage: createCloudinaryImageUploader({
     cloudName: process.env.CLOUDINARY_CLOUD_NAME,
     apiKey: process.env.CLOUDINARY_API_KEY,

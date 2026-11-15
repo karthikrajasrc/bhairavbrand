@@ -90,7 +90,24 @@ export const categoryShortcutIconsSchema = z.object({
   ), 'Image must be uploaded to Cloudinary'),
 }).strict();
 
+export const reviewSchema = z.object({
+  name: z.string().trim().min(2).max(80),
+  stars: z.number().int().min(1).max(5),
+  comments: z.string().trim().min(3).max(1200),
+}).strict();
+
 export const objectIdSchema = z.string().regex(/^[\da-f]{24}$/i);
+
+const checkoutItemsSchema = z.array(z.object({
+  productId: objectIdSchema,
+  variantId: z.string().trim().min(1).max(100),
+  quantity: z.number().int().min(1).max(99),
+}).strict()).min(1).max(50).refine((items) => {
+  const keys = items.map(({ productId, variantId }) => `${productId}:${variantId}`);
+  return new Set(keys).size === keys.length;
+}, { message: 'Each product size can appear only once' });
+
+export const checkoutQuoteSchema = z.object({ items: checkoutItemsSchema }).strict();
 
 export const checkoutSchema = z.object({
   customer: z.object({
@@ -108,18 +125,28 @@ export const checkoutSchema = z.object({
       postalCode: z.string().trim().regex(/^\d{6}$/, 'Enter a valid 6-digit PIN code'),
     }).strict(),
   }).strict(),
-  items: z.array(z.object({
-    productId: objectIdSchema,
-    variantId: z.string().trim().min(1).max(100),
-    quantity: z.number().int().min(1).max(99),
-  }).strict()).min(1).max(50),
-}).strict().refine((input) => {
-  const keys = input.items.map(({ productId, variantId }) => `${productId}:${variantId}`);
-  return new Set(keys).size === keys.length;
-}, { message: 'Each product size can appear only once', path: ['items'] });
+  items: checkoutItemsSchema,
+}).strict();
 
 export const paymentVerificationSchema = z.object({
   razorpay_order_id: z.string().regex(/^order_[A-Za-z0-9]+$/),
   razorpay_payment_id: z.string().regex(/^pay_[A-Za-z0-9]+$/),
   razorpay_signature: z.string().regex(/^[a-fA-F0-9]{64}$/),
+}).strict();
+
+export const contactInquirySchema = z.object({
+  name: z.string().trim().min(2).max(80),
+  email: z.string().trim().email().max(254),
+  phone: z.string().trim().max(18).default('').refine((value) => {
+    if (!value) return true;
+    const digits = value.replace(/\D/g, '');
+    return /^\+?[\d ()-]+$/.test(value) && digits.length >= 10 && digits.length <= 15;
+  }, 'Enter a valid phone number'),
+  subject: z.string().trim().min(2).max(120),
+  message: z.string().trim().min(10).max(3000),
+}).strict();
+
+export const trackOrderSchema = z.object({
+  orderNumber: z.string().trim().min(1).max(40),
+  email: z.string().trim().email().max(254),
 }).strict();

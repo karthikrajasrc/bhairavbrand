@@ -23,7 +23,8 @@ export default function CartDrawer({ open, onClose }) {
               <div className="q">
                 <button onClick={() => setQty(key, qty - 1)} aria-label="Decrease quantity">−</button>
                 <span>{qty}</span>
-                <button onClick={() => setQty(key, qty + 1)} aria-label="Increase quantity">+</button>
+                <button disabled={qty >= 99} onClick={() => setQty(key, qty + 1)}
+                  aria-label="Increase quantity">+</button>
               </div>
             </div>
             <b>{money(variant.price * qty)}</b>
@@ -34,6 +35,7 @@ export default function CartDrawer({ open, onClose }) {
         <div className="df">
           <p><span>Subtotal</span><span>{money(subtotal)}</span></p>
           <small style={{ color: 'var(--mut)' }}>Taxes and shipping calculated at checkout{subtotal >= 999 ? ' · Free shipping applied 🎉' : ''}</small>
+          <Link className="btn o" to="/cart" onClick={onClose}>View cart</Link>
           <Link className="btn" to="/checkout" onClick={onClose}>Check out</Link>
         </div>
       )}

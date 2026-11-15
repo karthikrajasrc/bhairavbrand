@@ -1,6 +1,11 @@
 import { randomBytes } from 'node:crypto';
 import { PaymentGatewayError } from '../services/razorpayService.js';
-import { checkoutSchema, objectIdSchema, paymentVerificationSchema } from '../validation/schemas.js';
+import {
+  checkoutQuoteSchema,
+  checkoutSchema,
+  objectIdSchema,
+  paymentVerificationSchema,
+} from '../validation/schemas.js';
 
 export function createCheckoutController({ Product, StoreSettings, Order, razorpay }) {
   const requirePaymentConfiguration = (req, res, next) => {
@@ -10,63 +15,84 @@ export function createCheckoutController({ Product, StoreSettings, Order, razorp
     return next();
   };
 
+  const quoteOrder = async (items) => {
+    const productIds = [...new Set(items.map(({ productId }) => productId))];
+    const products = await Product.find({ _id: { $in: productIds } });
+    const productsById = new Map(products.map((product) => [product._id.toString(), product]));
+    const orderItems = [];
+
+    for (const item of items) {
+      const product = productsById.get(item.productId);
+      if (!product) return { error: 'A product in your cart is no longer available' };
+
+      const variants = Array.isArray(product.variants) ? product.variants : [];
+      const variant = variants.length
+        ? variants.find((candidate) => candidate._id?.toString() === item.variantId)
+        : item.variantId === 'default'
+          ? { price: product.price, amount: null, unit: null }
+          : null;
+      if (!variant) return { error: 'A product size in your cart is no longer available' };
+
+      const unitPricePaise = Math.round(Number(variant.price) * 100);
+      orderItems.push({
+        productId: product._id,
+        name: product.name,
+        imageUrl: product.imageUrl,
+        variantId: item.variantId,
+        variantLabel: variant.amount
+          ? `${Number(variant.amount).toLocaleString('en-IN')} ${variant.unit === 'l' ? 'L' : variant.unit}`
+          : '',
+        quantity: item.quantity,
+        unitPricePaise,
+        lineTotalPaise: unitPricePaise * item.quantity,
+      });
+    }
+
+    const subtotalPaise = orderItems.reduce((total, item) => total + item.lineTotalPaise, 0);
+    const settings = await StoreSettings.findOne({ key: 'delivery' });
+    const freeShippingThresholdPaise = Math.round((settings?.freeShippingThreshold ?? 999) * 100);
+    const deliveryChargePaise = subtotalPaise >= freeShippingThresholdPaise
+      ? 0
+      : Math.round((settings?.deliveryCharge ?? 0) * 100);
+    return {
+      items: orderItems,
+      subtotalPaise,
+      deliveryChargePaise,
+      totalPaise: subtotalPaise + deliveryChargePaise,
+    };
+  };
+
   return {
     requirePaymentConfiguration,
+
+    quote: async (req, res, next) => {
+      try {
+        const input = checkoutQuoteSchema.parse(req.body);
+        const quote = await quoteOrder(input.items);
+        if (quote.error) return res.status(400).json({ error: quote.error });
+        return res.json({ quote });
+      } catch (error) {
+        return next(error);
+      }
+    },
 
     createOrder: async (req, res, next) => {
       try {
         const input = checkoutSchema.parse(req.body);
-        const productIds = [...new Set(input.items.map(({ productId }) => productId))];
-        const products = await Product.find({ _id: { $in: productIds } });
-        const productsById = new Map(products.map((product) => [product._id.toString(), product]));
-        const orderItems = [];
-
-        for (const item of input.items) {
-          const product = productsById.get(item.productId);
-          if (!product) return res.status(400).json({ error: 'A product in your cart is no longer available' });
-
-          const variants = Array.isArray(product.variants) ? product.variants : [];
-          const variant = variants.length
-            ? variants.find((candidate) => candidate._id?.toString() === item.variantId)
-            : item.variantId === 'default'
-              ? { price: product.price, amount: null, unit: null }
-              : null;
-          if (!variant) return res.status(400).json({ error: 'A product size in your cart is no longer available' });
-
-          const unitPricePaise = Math.round(Number(variant.price) * 100);
-          orderItems.push({
-            productId: product._id,
-            name: product.name,
-            imageUrl: product.imageUrl,
-            variantId: item.variantId,
-            variantLabel: variant.amount
-              ? `${Number(variant.amount).toLocaleString('en-IN')} ${variant.unit === 'l' ? 'L' : variant.unit}`
-              : '',
-            quantity: item.quantity,
-            unitPricePaise,
-            lineTotalPaise: unitPricePaise * item.quantity,
-          });
-        }
-
-        const subtotalPaise = orderItems.reduce((total, item) => total + item.lineTotalPaise, 0);
-        const settings = await StoreSettings.findOne({ key: 'delivery' });
-        const freeShippingThresholdPaise = Math.round((settings?.freeShippingThreshold ?? 999) * 100);
-        const deliveryChargePaise = subtotalPaise >= freeShippingThresholdPaise
-          ? 0
-          : Math.round((settings?.deliveryCharge ?? 0) * 100);
-        const totalPaise = subtotalPaise + deliveryChargePaise;
-        if (totalPaise < 100) return res.status(400).json({ error: 'The minimum order total is ₹1' });
+        const quote = await quoteOrder(input.items);
+        if (quote.error) return res.status(400).json({ error: quote.error });
+        if (quote.totalPaise < 100) return res.status(400).json({ error: 'The minimum order total is ₹1' });
 
         const orderNumber = `BB-${randomBytes(8).toString('hex').toUpperCase()}`;
         const paymentOrder = await razorpay.createOrder({
-          amount: totalPaise,
+          amount: quote.totalPaise,
           currency: 'INR',
           receipt: orderNumber,
           notes: { orderNumber },
         });
         if (
           !paymentOrder?.id
-          || paymentOrder.amount !== totalPaise
+          || paymentOrder.amount !== quote.totalPaise
           || paymentOrder.currency !== 'INR'
         ) throw new PaymentGatewayError();
 
@@ -76,10 +102,10 @@ export function createCheckoutController({ Product, StoreSettings, Order, razorp
             ...input.customer,
             email: input.customer.email.toLowerCase(),
           },
-          items: orderItems,
-          subtotalPaise,
-          deliveryChargePaise,
-          totalPaise,
+          items: quote.items,
+          subtotalPaise: quote.subtotalPaise,
+          deliveryChargePaise: quote.deliveryChargePaise,
+          totalPaise: quote.totalPaise,
           currency: 'INR',
           razorpayOrderId: paymentOrder.id,
           paymentStatus: 'pending',
@@ -92,9 +118,10 @@ export function createCheckoutController({ Product, StoreSettings, Order, razorp
             razorpayOrderId: order.razorpayOrderId,
             keyId: razorpay.keyId,
             currency: order.currency,
-            subtotalPaise: order.subtotalPaise,
-            deliveryChargePaise: order.deliveryChargePaise,
-            totalPaise: order.totalPaise,
+            items: quote.items,
+            subtotalPaise: quote.subtotalPaise,
+            deliveryChargePaise: quote.deliveryChargePaise,
+            totalPaise: quote.totalPaise,
           },
         });
       } catch (error) {

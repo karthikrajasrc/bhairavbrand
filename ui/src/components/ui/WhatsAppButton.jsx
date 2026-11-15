@@ -1,4 +1,4 @@
-const WHATSAPP_NUMBER = '917871780414';
+import { WHATSAPP_NUMBER } from '../../lib/contact.js';
 
 export default function WhatsAppButton() {
   return (
