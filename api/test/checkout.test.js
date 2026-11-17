@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHmac } from 'node:crypto';
 import { after, before, test } from 'node:test';
 import { createApp } from '../src/app.js';
 
@@ -20,6 +21,9 @@ const product = {
 const settings = { deliveryCharge: 35.5, freeShippingThreshold: 500 };
 const createdOrders = [];
 const razorpayAmounts = [];
+let currentRazorpayOrder;
+let paymentAmountOverride = null;
+let captureStatusOverride = null;
 let server;
 let baseUrl;
 
@@ -35,6 +39,9 @@ const Order = {
     createdOrders.push(order);
     return order;
   },
+  findOne: async ({ razorpayOrderId }) => (
+    createdOrders.find((order) => order.razorpayOrderId === razorpayOrderId) || null
+  ),
 };
 
 before(async () => {
@@ -45,17 +52,46 @@ before(async () => {
     uiOrigin,
     razorpayKeyId: 'test_key',
     razorpayKeySecret: 'test_secret',
-    fetchImpl: async (_url, { body }) => {
-      const requestBody = JSON.parse(body);
-      razorpayAmounts.push(requestBody.amount);
-      return {
-        ok: true,
-        json: async () => ({
+    fetchImpl: async (url, { method, body }) => {
+      const { pathname } = new URL(url);
+      if (pathname === '/v1/orders') {
+        const requestBody = JSON.parse(body);
+        razorpayAmounts.push(requestBody.amount);
+        currentRazorpayOrder = {
           id: `order_${razorpayAmounts.length}`,
           amount: requestBody.amount,
           currency: requestBody.currency,
-        }),
-      };
+        };
+        return {
+          ok: true,
+          json: async () => currentRazorpayOrder,
+        };
+      }
+      if (pathname === '/v1/payments/pay_test001' && method === 'GET') {
+        return {
+          ok: true,
+          json: async () => ({
+            id: 'pay_test001',
+            order_id: currentRazorpayOrder.id,
+            amount: paymentAmountOverride ?? currentRazorpayOrder.amount,
+            currency: 'INR',
+            status: 'authorized',
+          }),
+        };
+      }
+      if (pathname === '/v1/payments/pay_test001/capture' && method === 'POST') {
+        return {
+          ok: true,
+          json: async () => ({
+            id: 'pay_test001',
+            order_id: currentRazorpayOrder.id,
+            amount: currentRazorpayOrder.amount,
+            currency: 'INR',
+            status: captureStatusOverride ?? 'captured',
+          }),
+        };
+      }
+      throw new Error(`Unexpected Razorpay request: ${method} ${pathname}`);
     },
   }).listen(0);
   await new Promise((resolve) => server.once('listening', resolve));
@@ -106,12 +142,12 @@ test('checkout quote rejects client-supplied prices', async () => {
   assert.equal(response.status, 400);
 });
 
-test('payment order and stored totals use the same database quote', async () => {
-  const response = await request('/api/checkout/orders', {
+test('checkout stores an order only after Razorpay payment is verified and captured', async () => {
+  const checkout = {
     customer: {
       name: 'Customer Name',
       email: 'customer@example.com',
-      phone: '+91 98765 43210',
+      phone: '9876543210',
       address: {
         line1: '12 Temple Road',
         line2: '',
@@ -121,11 +157,82 @@ test('payment order and stored totals use the same database quote', async () => 
       },
     },
     items: [cartItem()],
+  };
+  const response = await request('/api/checkout/orders', {
+    ...checkout,
   });
   assert.equal(response.status, 201);
   const { order } = await response.json();
   assert.equal(razorpayAmounts.at(-1), 7800);
   assert.equal(order.totalPaise, 7800);
   assert.equal(order.items[0].unitPricePaise, 4250);
-  assert.equal(createdOrders.at(-1).deliveryChargePaise, 3550);
+  assert.equal(createdOrders.length, 0);
+
+  for (const phone of ['987654321', '98765432101']) {
+    const invalidResponse = await request('/api/checkout/orders', {
+      ...checkout,
+      customer: { ...checkout.customer, phone },
+    });
+    assert.equal(invalidResponse.status, 400);
+  }
+
+  const paymentId = 'pay_test001';
+  const paymentSignature = createHmac('sha256', 'test_secret')
+    .update(`${order.razorpayOrderId}|${paymentId}`)
+    .digest('hex');
+  const verification = {
+    razorpay_order_id: order.razorpayOrderId,
+    razorpay_payment_id: paymentId,
+    razorpay_signature: paymentSignature,
+    checkoutToken: order.checkoutToken,
+  };
+  const invalidVerification = await request(
+    `/api/checkout/orders/${order.razorpayOrderId}/verify`,
+    { ...verification, razorpay_signature: '0'.repeat(64) },
+  );
+  assert.equal(invalidVerification.status, 400);
+  assert.equal(createdOrders.length, 0);
+
+  const tamperedTokenResponse = await request(
+    `/api/checkout/orders/${order.razorpayOrderId}/verify`,
+    { ...verification, checkoutToken: `${order.checkoutToken}x` },
+  );
+  assert.equal(tamperedTokenResponse.status, 400);
+  assert.equal(createdOrders.length, 0);
+
+  paymentAmountOverride = order.totalPaise + 1;
+  const mismatchedAmountResponse = await request(
+    `/api/checkout/orders/${order.razorpayOrderId}/verify`,
+    verification,
+  );
+  assert.equal(mismatchedAmountResponse.status, 400);
+  assert.equal(createdOrders.length, 0);
+  paymentAmountOverride = null;
+
+  captureStatusOverride = 'authorized';
+  const uncapturedResponse = await request(
+    `/api/checkout/orders/${order.razorpayOrderId}/verify`,
+    verification,
+  );
+  assert.equal(uncapturedResponse.status, 409);
+  assert.equal(createdOrders.length, 0);
+  captureStatusOverride = null;
+
+  const verifiedResponse = await request(
+    `/api/checkout/orders/${order.razorpayOrderId}/verify`,
+    verification,
+  );
+  assert.equal(verifiedResponse.status, 200);
+  const verifiedOrder = (await verifiedResponse.json()).order;
+  assert.equal(verifiedOrder.paymentStatus, 'paid');
+  assert.equal(verifiedOrder.status, 'new');
+  assert.equal(createdOrders.length, 1);
+  assert.equal(createdOrders[0].deliveryChargePaise, 3550);
+
+  const retryResponse = await request(
+    `/api/checkout/orders/${order.razorpayOrderId}/verify`,
+    verification,
+  );
+  assert.equal(retryResponse.status, 200);
+  assert.equal(createdOrders.length, 1);
 });

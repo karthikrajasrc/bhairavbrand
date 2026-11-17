@@ -151,7 +151,14 @@ const FakeOrder = {
     return order;
   },
   find: (filter) => query(() => orders.filter((item) => matches(item, filter))),
+  findOne: (filter) => query(() => orders.find((item) => matches(item, filter)) || null),
   findById: (id) => query(() => orders.find((item) => item._id === id) || null),
+  findOneAndUpdate: async (filter, update) => {
+    const order = orders.find((item) => matches(item, filter));
+    if (!order) return null;
+    Object.assign(order, update.$set);
+    return order;
+  },
 };
 
 before(async () => {
@@ -208,6 +215,7 @@ test('admin role model and persisted store models have expected constraints', ()
   assert.equal(new Category({ name: 'Pantry', slug: 'pantry' }).iconUrl, '');
   assert.equal(Product.schema.path('imageUrl').options.required, true);
   assert.equal(Order.schema.path('razorpayOrderId').options.required, true);
+  assert.deepEqual(Order.schema.path('status').options.enum, ['pending_payment', 'new', 'accepted', 'dispatched']);
   assert.equal(Product.schema.path('showOnHome'), undefined);
   assert.equal(Product.schema.path('description').options.default, '');
   assert.deepEqual(new Product().benefits, []);
@@ -632,7 +640,7 @@ test('verified admin Google identity can manage products and delivery charges', 
     customer: {
       name: 'Buyer Example',
       email: 'buyer@example.com',
-      phone: '+919876543210',
+      phone: '9876543210',
       address: {
         line1: '123 Market Road',
         line2: 'Near the temple',
@@ -662,6 +670,7 @@ test('verified admin Google identity can manage products and delivery charges', 
   const checkoutResponse = await post('/api/checkout/orders', checkoutBody);
   assert.equal(checkoutResponse.status, 201);
   const checkoutData = await checkoutResponse.json();
+  assert.equal(orders.length, 0);
   assert.equal(checkoutData.order.totalPaise, 54900);
   assert.equal(checkoutData.order.deliveryChargePaise, 4900);
   assert.equal(checkoutData.order.keyId, 'rzp_test_id');
@@ -677,9 +686,10 @@ test('verified admin Google identity can manage products and delivery charges', 
     razorpay_signature: createHmac('sha256', 'test_razorpay_secret')
       .update('order_test001|pay_test001')
       .digest('hex'),
+    checkoutToken: checkoutData.order.checkoutToken,
   };
   const invalidPayment = await post(
-    `/api/checkout/orders/${checkoutData.order.id}/verify`,
+    `/api/checkout/orders/${checkoutData.order.razorpayOrderId}/verify`,
     { ...paymentCallback, razorpay_signature: '0'.repeat(64) },
   );
   assert.equal(invalidPayment.status, 400);
@@ -698,7 +708,7 @@ test('verified admin Google identity can manage products and delivery charges', 
     status: 'captured',
   });
   const verifiedPayment = await post(
-    `/api/checkout/orders/${checkoutData.order.id}/verify`,
+    `/api/checkout/orders/${checkoutData.order.razorpayOrderId}/verify`,
     paymentCallback,
   );
   assert.equal(verifiedPayment.status, 200);
@@ -712,6 +722,60 @@ test('verified admin Google identity can manage products and delivery charges', 
   assert.equal(paidOrders[0].status, 'new');
   assert.equal(paidOrders[0].customer.email, 'buyer@example.com');
   assert.equal(paidOrders[0].items[0].lineTotalPaise, 50000);
+
+  const statusUrl = `${baseUrl}/api/admin/orders/${paidOrders[0]._id}/status`;
+  const updateStatus = (body, cookie = adminCookie) => fetch(statusUrl, {
+    method: 'PUT',
+    headers: { Origin: uiOrigin, 'Content-Type': 'application/json', Cookie: cookie },
+    body: JSON.stringify(body),
+  });
+  const dispatchBeforeAcceptance = await updateStatus({
+    status: 'dispatched',
+    trackingId: 'TRACK-001',
+    trackingUrl: 'https://carrier.example/track/TRACK-001',
+  });
+  assert.equal(dispatchBeforeAcceptance.status, 409);
+
+  const acceptedOrder = await updateStatus({ status: 'accepted' });
+  assert.equal(acceptedOrder.status, 200);
+  assert.equal((await acceptedOrder.json()).order.status, 'accepted');
+
+  const incompleteDispatch = await updateStatus({ status: 'dispatched', trackingId: 'TRACK-001' });
+  assert.equal(incompleteDispatch.status, 400);
+  const insecureTrackingLink = await updateStatus({
+    status: 'dispatched',
+    trackingId: 'TRACK-001',
+    trackingUrl: 'http://carrier.example/track/TRACK-001',
+  });
+  assert.equal(insecureTrackingLink.status, 400);
+
+  const customerOrderStatusUpdate = await updateStatus({ status: 'accepted' }, customerCookie);
+  assert.equal(customerOrderStatusUpdate.status, 403);
+
+  const dispatchedOrder = await updateStatus({
+    status: 'dispatched',
+    trackingId: 'TRACK-001',
+    trackingUrl: 'https://carrier.example/track/TRACK-001',
+  });
+  assert.equal(dispatchedOrder.status, 200);
+  assert.deepEqual(await dispatchedOrder.json(), {
+    order: {
+      id: paidOrders[0]._id,
+      status: 'dispatched',
+      trackingId: 'TRACK-001',
+      trackingUrl: 'https://carrier.example/track/TRACK-001',
+    },
+  });
+
+  const terminalOrderUpdate = await updateStatus({ status: 'accepted' });
+  assert.equal(terminalOrderUpdate.status, 409);
+
+  const dispatchedOrdersResponse = await fetch(`${baseUrl}/api/admin/orders`, {
+    headers: { Cookie: adminCookie },
+  });
+  const [dispatchedOrderInList] = (await dispatchedOrdersResponse.json()).orders;
+  assert.equal(dispatchedOrderInList.status, 'dispatched');
+  assert.equal(dispatchedOrderInList.trackingId, 'TRACK-001');
 
   const removedAdminBannersApi = await fetch(`${baseUrl}/api/admin/banners`, {
     headers: { Cookie: adminCookie },

@@ -9,6 +9,7 @@ export function createAdminRoutes({ controller, imageUpload }) {
   router.post('/images', controller.requireImageStorage, imageUpload, controller.uploadImage);
   router.get('/products', controller.products);
   router.get('/orders', controller.orders);
+  router.put('/orders/:id/status', controller.updateOrderStatus);
   router.get('/reviews', controller.reviews);
   router.post('/reviews', controller.createReview);
   router.delete('/reviews/:id', controller.deleteReview);

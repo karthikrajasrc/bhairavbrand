@@ -42,6 +42,23 @@ export function createRazorpayService({ keyId, keySecret, fetchImpl = globalThis
       const received = Buffer.from(signature, 'hex');
       return timingSafeEqual(expected, received);
     },
+    signCheckoutState(state) {
+      const encodedState = Buffer.from(JSON.stringify(state)).toString('base64url');
+      const signature = createHmac('sha256', keySecret).update(encodedState).digest('base64url');
+      return `${encodedState}.${signature}`;
+    },
+    verifyCheckoutState(token) {
+      const [encodedState, signature, ...extraParts] = token.split('.');
+      if (!encodedState || !signature || extraParts.length) return null;
+      const expected = createHmac('sha256', keySecret).update(encodedState).digest();
+      const received = Buffer.from(signature, 'base64url');
+      if (received.length !== expected.length || !timingSafeEqual(expected, received)) return null;
+      try {
+        return JSON.parse(Buffer.from(encodedState, 'base64url').toString('utf8'));
+      } catch {
+        return null;
+      }
+    },
     createOrder: (data) => request('/orders', 'POST', data),
     fetchPayment: (paymentId) => request(`/payments/${encodeURIComponent(paymentId)}`, 'GET'),
     capturePayment: (paymentId, amount) => request(

@@ -81,7 +81,7 @@ export function createApp({
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type'],
   }));
-  app.use(express.json({ limit: '16kb', strict: true }));
+  app.use(express.json({ limit: '256kb', strict: true }));
   app.use(cookieParser());
   app.use(requireRequestOrigin(uiOrigin));
 

@@ -118,9 +118,8 @@ export default function Checkout() {
   const orderViaWhatsApp = async () => {
     setError('');
     if (!formRef.current?.reportValidity()) return;
-    const phoneDigits = customer.phone.replace(/\D/g, '');
-    if (phoneDigits.length < 10 || phoneDigits.length > 15) {
-      setError('Enter a valid phone number with 10 to 15 digits.');
+    if (!/^\d{10}$/.test(customer.phone)) {
+      setError('Enter a valid 10-digit phone number.');
       return;
     }
     if (!quote || quoteLoading || quoteError) {
@@ -177,16 +176,17 @@ export default function Checkout() {
   const verifyPayment = async (order, payment) => {
     setProcessing(true);
     setError('');
+    const verification = { ...payment, checkoutToken: order.checkoutToken };
     try {
-      const result = await apiRequest(`/api/checkout/orders/${order.id}/verify`, {
+      const result = await apiRequest(`/api/checkout/orders/${order.razorpayOrderId}/verify`, {
         method: 'POST',
-        body: payment,
+        body: verification,
       });
       clear();
       setVerificationRetry(null);
       setConfirmation(result.order);
     } catch (requestError) {
-      setVerificationRetry({ order, payment });
+      setVerificationRetry({ order, payment: verification });
       setError(`${requestError.message}. If your account was charged, retry verification before paying again.`);
     } finally {
       setProcessing(false);
@@ -289,9 +289,11 @@ export default function Checkout() {
             </label>
             <label className="checkout-field">
               Phone
-              <input autoComplete="tel" maxLength="18" minLength="10" pattern="[0-9+ ()-]{10,18}"
-                placeholder="10-digit mobile number" required type="tel"
-                value={customer.phone} onChange={(event) => setCustomerField('phone', event.target.value)} />
+              <input autoComplete="tel" inputMode="numeric" maxLength="10" minLength="10"
+                pattern="[0-9]{10}" placeholder="10-digit mobile number" required
+                title="Enter exactly 10 digits" type="tel"
+                value={customer.phone}
+                onChange={(event) => setCustomerField('phone', event.target.value.replace(/\D/g, '').slice(0, 10))} />
             </label>
             <label className="checkout-field checkout-field-wide">
               Address

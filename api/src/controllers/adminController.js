@@ -4,6 +4,7 @@ import {
   categoryShortcutIconsSchema,
   deliverySchema,
   objectIdSchema,
+  orderStatusUpdateSchema,
   productSchema,
   reviewSchema,
 } from '../validation/schemas.js';
@@ -107,6 +108,58 @@ export function createAdminController({
       try {
         const orders = await Order.find({ paymentStatus: 'paid' }).sort({ createdAt: -1 });
         return res.json({ orders });
+      } catch (error) {
+        return next(error);
+      }
+    },
+
+    updateOrderStatus: async (req, res, next) => {
+      try {
+        const id = objectIdSchema.parse(req.params.id);
+        const input = orderStatusUpdateSchema.parse(req.body);
+        const order = await Order.findById(id);
+        if (!order) return res.status(404).json({ error: 'Order not found' });
+        if (order.paymentStatus !== 'paid') {
+          return res.status(409).json({ error: 'Only paid orders can be updated' });
+        }
+
+        if (order.status === input.status) {
+          return res.json({
+            order: {
+              id: order._id.toString(),
+              status: order.status,
+              trackingId: order.trackingId,
+              trackingUrl: order.trackingUrl,
+            },
+          });
+        }
+        const canAccept = order.status === 'new' && input.status === 'accepted';
+        const canDispatch = order.status === 'accepted' && input.status === 'dispatched';
+        if (!canAccept && !canDispatch) {
+          return res.status(409).json({ error: 'Orders must be accepted before they can be dispatched' });
+        }
+
+        const update = { status: input.status };
+        if (input.status === 'dispatched') {
+          update.trackingId = input.trackingId;
+          update.trackingUrl = input.trackingUrl;
+        }
+        const updatedOrder = await Order.findOneAndUpdate(
+          { _id: id, paymentStatus: 'paid', status: order.status },
+          { $set: update },
+          { new: true, runValidators: true },
+        );
+        if (!updatedOrder) {
+          return res.status(409).json({ error: 'Order status changed. Refresh the orders list and try again.' });
+        }
+        return res.json({
+          order: {
+            id: updatedOrder._id.toString(),
+            status: updatedOrder.status,
+            trackingId: updatedOrder.trackingId,
+            trackingUrl: updatedOrder.trackingUrl,
+          },
+        });
       } catch (error) {
         return next(error);
       }

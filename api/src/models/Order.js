@@ -38,7 +38,14 @@ const orderSchema = new mongoose.Schema({
   razorpayOrderId: { type: String, required: true, unique: true, trim: true },
   razorpayPaymentId: { type: String, default: '', trim: true },
   paymentStatus: { type: String, required: true, enum: ['pending', 'paid'], default: 'pending' },
-  status: { type: String, required: true, enum: ['pending_payment', 'new'], default: 'pending_payment' },
+  status: {
+    type: String,
+    required: true,
+    enum: ['pending_payment', 'new', 'accepted', 'dispatched'],
+    default: 'pending_payment',
+  },
+  trackingId: { type: String, default: '', trim: true, maxlength: 120 },
+  trackingUrl: { type: String, default: '', trim: true, maxlength: 2048 },
   paidAt: { type: Date, default: null },
 }, { timestamps: true, versionKey: false });
 orderSchema.index({ paymentStatus: 1, createdAt: -1 });

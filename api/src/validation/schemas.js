@@ -81,6 +81,25 @@ export const deliverySchema = z.object({
   freeShippingThreshold: z.number().finite().min(0).max(10000000),
 }).strict();
 
+const trackingUrlSchema = z.string().trim().max(2048).url().refine((value) => {
+  try {
+    return new URL(value).protocol === 'https:';
+  } catch {
+    return false;
+  }
+}, 'Tracking URL must use HTTPS');
+
+export const orderStatusUpdateSchema = z.discriminatedUnion('status', [
+  z.object({
+    status: z.literal('accepted'),
+  }).strict(),
+  z.object({
+    status: z.literal('dispatched'),
+    trackingId: z.string().trim().min(1).max(120),
+    trackingUrl: trackingUrlSchema,
+  }).strict(),
+]);
+
 export const categoryShortcutIconsSchema = z.object({
   offersIconUrl: z.string().trim().max(2048).default('').refine((value) => (
     !value || cloudinaryImageUrlSchema.safeParse(value).success
@@ -107,16 +126,15 @@ const checkoutItemsSchema = z.array(z.object({
   return new Set(keys).size === keys.length;
 }, { message: 'Each product size can appear only once' });
 
+const checkoutPhoneSchema = z.string().trim().regex(/^\d{10}$/, 'Enter a valid 10-digit phone number');
+
 export const checkoutQuoteSchema = z.object({ items: checkoutItemsSchema }).strict();
 
 export const checkoutSchema = z.object({
   customer: z.object({
     name: z.string().trim().min(2).max(80),
     email: z.string().trim().email().max(254),
-    phone: z.string().trim().min(10).max(18).refine((value) => {
-      const digits = value.replace(/\D/g, '');
-      return /^\+?[\d ()-]+$/.test(value) && digits.length >= 10 && digits.length <= 15;
-    }, 'Enter a valid phone number'),
+    phone: checkoutPhoneSchema,
     address: z.object({
       line1: z.string().trim().min(5).max(160),
       line2: z.string().trim().max(160).default(''),
@@ -128,10 +146,37 @@ export const checkoutSchema = z.object({
   items: checkoutItemsSchema,
 }).strict();
 
+const checkoutOrderItemSchema = z.object({
+  productId: objectIdSchema,
+  name: z.string().trim().min(1).max(120),
+  imageUrl: z.string().trim().min(1).max(2048).url(),
+  variantId: z.string().trim().min(1).max(100),
+  variantLabel: z.string().trim().max(40).default(''),
+  quantity: z.number().int().min(1).max(99),
+  unitPricePaise: z.number().int().nonnegative(),
+  lineTotalPaise: z.number().int().nonnegative(),
+}).strict();
+
+export const checkoutOrderSnapshotSchema = z.object({
+  orderNumber: z.string().regex(/^BB-[A-F0-9]{16}$/),
+  razorpayOrderId: z.string().regex(/^order_[A-Za-z0-9]+$/),
+  customer: checkoutSchema.shape.customer,
+  items: z.array(checkoutOrderItemSchema).min(1).max(50),
+  subtotalPaise: z.number().int().nonnegative(),
+  deliveryChargePaise: z.number().int().nonnegative(),
+  totalPaise: z.number().int().nonnegative(),
+  currency: z.literal('INR'),
+}).strict().refine((snapshot) => {
+  const subtotalPaise = snapshot.items.reduce((total, item) => total + item.lineTotalPaise, 0);
+  return subtotalPaise === snapshot.subtotalPaise
+    && subtotalPaise + snapshot.deliveryChargePaise === snapshot.totalPaise;
+}, 'Checkout totals are invalid');
+
 export const paymentVerificationSchema = z.object({
   razorpay_order_id: z.string().regex(/^order_[A-Za-z0-9]+$/),
   razorpay_payment_id: z.string().regex(/^pay_[A-Za-z0-9]+$/),
   razorpay_signature: z.string().regex(/^[a-fA-F0-9]{64}$/),
+  checkoutToken: z.string().min(1).max(200000).optional(),
 }).strict();
 
 export const contactInquirySchema = z.object({
@@ -146,7 +191,20 @@ export const contactInquirySchema = z.object({
   message: z.string().trim().min(10).max(3000),
 }).strict();
 
-export const trackOrderSchema = z.object({
+const trackOrderByNumberSchema = z.object({
   orderNumber: z.string().trim().min(1).max(40),
-  email: z.string().trim().email().max(254),
+  email: z.string().trim().email().max(254).optional(),
+  phone: checkoutPhoneSchema.optional(),
+}).strict().refine(({ email, phone }) => Boolean(email) !== Boolean(phone), {
+  message: 'Enter your checkout email or phone number',
+  path: ['email'],
+});
+
+const trackOrdersByPhoneSchema = z.object({
+  phone: checkoutPhoneSchema,
 }).strict();
+
+export const trackOrderSchema = z.union([
+  trackOrderByNumberSchema,
+  trackOrdersByPhoneSchema,
+]);

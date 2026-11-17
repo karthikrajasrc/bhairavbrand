@@ -26,11 +26,24 @@ const ContactInquiry = {
 
 const Order = {
   findOne: async (filter) => (
-    filter.orderNumber === order.orderNumber
-    && filter['customer.email'] === order.customer.email
+    filter.paymentStatus === 'paid'
+    && order.paymentStatus === 'paid'
+    && filter.orderNumber === order.orderNumber
       ? order
       : null
   ),
+  find: (filter) => ({
+    sort() { return this; },
+    limit() {
+      return Promise.resolve(
+        filter.paymentStatus === 'paid'
+          && order.paymentStatus === 'paid'
+          && filter['customer.phone'].$regex.test(order.customer.phone)
+          ? [order]
+          : [],
+      );
+    },
+  }),
 };
 
 before(async () => {
@@ -70,21 +83,66 @@ test('contact requests are validated and saved with normalized email', async () 
   assert.equal(inquiries[0].phone, '');
 });
 
-test('order tracking requires matching order number and checkout email and returns limited details', async () => {
+test('order tracking requires matching order number and checkout email or phone and returns limited details', async () => {
   const mismatch = await post('/api/orders/track', {
     orderNumber: order.orderNumber,
     email: 'someone-else@example.com',
   });
   assert.equal(mismatch.status, 404);
 
-  const response = await post('/api/orders/track', {
+  const invalidCredentials = await post('/api/orders/track', {
+    orderNumber: order.orderNumber,
+    email: order.customer.email,
+    phone: '9876543210',
+  });
+  assert.equal(invalidCredentials.status, 400);
+
+  const emailResponse = await post('/api/orders/track', {
     orderNumber: order.orderNumber.toLowerCase(),
     email: order.customer.email.toUpperCase(),
   });
-  assert.equal(response.status, 200);
-  const result = await response.json();
+  assert.equal(emailResponse.status, 200);
+
+  const phoneResponse = await post('/api/orders/track', {
+    orderNumber: order.orderNumber,
+    phone: '9876543210',
+  });
+  assert.equal(phoneResponse.status, 200);
+
+  const result = await phoneResponse.json();
   assert.deepEqual(result.order.items, [{ name: 'Incense', variantLabel: '100 g', quantity: 2 }]);
   assert.equal(result.order.orderNumber, order.orderNumber);
   assert.equal('customer' in result.order, false);
   assert.equal('razorpayOrderId' in result.order, false);
+
+  const phoneLookupResponse = await post('/api/orders/track', {
+    phone: '9876543210',
+  });
+  assert.equal(phoneLookupResponse.status, 200);
+  const phoneLookup = await phoneLookupResponse.json();
+  assert.deepEqual(phoneLookup.orders.map(({ orderNumber }) => orderNumber), [order.orderNumber]);
+  assert.equal('customer' in phoneLookup.orders[0], false);
+
+  const unmatchedPhoneLookup = await post('/api/orders/track', {
+    phone: '9999999999',
+  });
+  assert.equal(unmatchedPhoneLookup.status, 404);
+
+  order.paymentStatus = 'pending';
+  const pendingPhoneLookup = await post('/api/orders/track', { phone: '9876543210' });
+  assert.equal(pendingPhoneLookup.status, 404);
+
+  order.paymentStatus = 'paid';
+  order.status = 'dispatched';
+  order.trackingId = 'TRACK-001';
+  order.trackingUrl = 'https://carrier.example/track/TRACK-001';
+  const dispatchedOrderResponse = await post('/api/orders/track', {
+    orderNumber: order.orderNumber,
+    email: order.customer.email,
+  });
+  assert.equal(dispatchedOrderResponse.status, 200);
+  const dispatchedOrder = await dispatchedOrderResponse.json();
+  assert.equal(dispatchedOrder.order.status, 'dispatched');
+  assert.equal(dispatchedOrder.order.trackingId, 'TRACK-001');
+  assert.equal(dispatchedOrder.order.trackingUrl, 'https://carrier.example/track/TRACK-001');
 });
