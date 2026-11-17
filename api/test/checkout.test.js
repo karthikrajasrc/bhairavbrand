@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import { after, before, test } from 'node:test';
 import { createApp } from '../src/app.js';
+import { INDIAN_STATES } from '../src/indianStates.js';
 
 const uiOrigin = 'http://localhost:5173';
 const productId = '111111111111111111111111';
@@ -18,7 +19,13 @@ const product = {
     price: 42.5,
   }],
 };
-const settings = { deliveryCharge: 35.5, freeShippingThreshold: 500 };
+const settings = {
+  deliveryRates: INDIAN_STATES.map((state) => ({
+    state,
+    deliveryCharge: state === 'Tamil Nadu' ? 35.5 : 0,
+    enabled: state === 'Tamil Nadu' || state === 'Kerala',
+  })),
+};
 const createdOrders = [];
 const razorpayAmounts = [];
 let currentRazorpayOrder;
@@ -113,8 +120,8 @@ const request = (path, body) => fetch(`${baseUrl}${path}`, {
 
 const cartItem = (quantity = 1) => ({ productId, variantId, quantity });
 
-test('checkout quote uses database product prices and delivery settings', async () => {
-  const response = await request('/api/checkout/quote', { items: [cartItem()] });
+test('checkout quote uses database prices and the selected state delivery charge', async () => {
+  const response = await request('/api/checkout/quote', { items: [cartItem()], state: 'Tamil Nadu' });
   assert.equal(response.status, 200);
   const { quote } = await response.json();
   assert.equal(quote.items[0].unitPricePaise, 4250);
@@ -126,18 +133,40 @@ test('checkout quote uses database product prices and delivery settings', async 
   assert.equal(quote.totalPaise, 7800);
 });
 
-test('checkout quote applies the database free-delivery threshold', async () => {
-  const response = await request('/api/checkout/quote', { items: [cartItem(12)] });
+test('delivery charges stay state-specific regardless of order subtotal', async () => {
+  const response = await request('/api/checkout/quote', { items: [cartItem(12)], state: 'Tamil Nadu' });
   assert.equal(response.status, 200);
   const { quote } = await response.json();
   assert.equal(quote.subtotalPaise, 51000);
-  assert.equal(quote.deliveryChargePaise, 0);
-  assert.equal(quote.totalPaise, 51000);
+  assert.equal(quote.deliveryChargePaise, 3550);
+  assert.equal(quote.totalPaise, 54550);
+});
+
+test('checkout supports zero-charge states and rejects disabled states', async () => {
+  const zeroChargeResponse = await request('/api/checkout/quote', {
+    items: [cartItem()],
+    state: 'Kerala',
+  });
+  assert.equal(zeroChargeResponse.status, 200);
+  assert.equal((await zeroChargeResponse.json()).quote.deliveryChargePaise, 0);
+
+  const disabledStateResponse = await request('/api/checkout/quote', {
+    items: [cartItem()],
+    state: 'Punjab',
+  });
+  assert.equal(disabledStateResponse.status, 400);
+
+  const invalidStateResponse = await request('/api/checkout/quote', {
+    items: [cartItem()],
+    state: 'Atlantis',
+  });
+  assert.equal(invalidStateResponse.status, 400);
 });
 
 test('checkout quote rejects client-supplied prices', async () => {
   const response = await request('/api/checkout/quote', {
     items: [{ ...cartItem(), price: 1 }],
+    state: 'Tamil Nadu',
   });
   assert.equal(response.status, 400);
 });
@@ -158,6 +187,16 @@ test('checkout stores an order only after Razorpay payment is verified and captu
     },
     items: [cartItem()],
   };
+  const disabledStateOrder = await request('/api/checkout/orders', {
+    ...checkout,
+    customer: {
+      ...checkout.customer,
+      address: { ...checkout.customer.address, state: 'Punjab' },
+    },
+  });
+  assert.equal(disabledStateOrder.status, 400);
+  assert.equal(razorpayAmounts.length, 0);
+
   const response = await request('/api/checkout/orders', {
     ...checkout,
   });

@@ -52,4 +52,6 @@ const productSchema = new mongoose.Schema({
   },
 }, { timestamps: true, versionKey: false });
 
+productSchema.index({ createdAt: -1 });
+
 export const Product = mongoose.models.Product || mongoose.model('Product', productSchema);

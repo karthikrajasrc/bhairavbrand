@@ -34,6 +34,13 @@ const isCheckoutQuote = (quote, itemCount) => (
   && Number.isSafeInteger(quote.totalPaise)
 );
 
+const isDeliveryOption = (option) => (
+  option
+  && typeof option.state === 'string'
+  && Number.isFinite(option.deliveryCharge)
+  && option.deliveryCharge >= 0
+);
+
 const loadRazorpay = () => new Promise((resolve, reject) => {
   if (window.Razorpay) {
     resolve();
@@ -53,6 +60,7 @@ export default function Checkout() {
   const { lines, clear } = useCart();
   const formRef = useRef(null);
   const quoteRequestId = useRef(0);
+  const deliveryRequestId = useRef(0);
   const checkoutItems = useMemo(() => lines.map(({ product, variant, qty }) => ({
     productId: product._id,
     variantId: String(variant.id),
@@ -68,23 +76,62 @@ export default function Checkout() {
   const [confirmation, setConfirmation] = useState(null);
   const [verificationRetry, setVerificationRetry] = useState(null);
   const [serverTotals, setServerTotals] = useState(null);
+  const [deliveryOptions, setDeliveryOptions] = useState([]);
+  const [deliveryLoading, setDeliveryLoading] = useState(true);
+  const [deliveryError, setDeliveryError] = useState('');
+  const selectedState = customer.address.state;
+
+  const loadDeliveryOptions = useCallback(async () => {
+    const requestId = deliveryRequestId.current + 1;
+    deliveryRequestId.current = requestId;
+    setDeliveryLoading(true);
+    setDeliveryError('');
+    try {
+      const result = await apiRequest('/api/storefront/delivery-charges');
+      if (
+        !result
+        || !Array.isArray(result.deliveryOptions)
+        || result.deliveryOptions.some((option) => !isDeliveryOption(option))
+        || new Set(result.deliveryOptions.map(({ state }) => state)).size !== result.deliveryOptions.length
+      ) {
+        throw new Error('The API returned invalid delivery options.');
+      }
+      if (requestId === deliveryRequestId.current) setDeliveryOptions(result.deliveryOptions);
+    } catch (requestError) {
+      if (requestId === deliveryRequestId.current) setDeliveryError(requestError.message);
+    } finally {
+      if (requestId === deliveryRequestId.current) setDeliveryLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadDeliveryOptions();
+    return () => { deliveryRequestId.current += 1; };
+  }, [loadDeliveryOptions]);
 
   const fetchQuote = useCallback(async () => {
     const result = await apiRequest('/api/checkout/quote', {
       method: 'POST',
-      body: { items: checkoutItems },
+      body: { items: checkoutItems, state: selectedState },
     });
     if (!isCheckoutQuote(result.quote, checkoutItems.length)) {
       throw new Error('The API returned invalid checkout prices.');
     }
     return result.quote;
-  }, [checkoutItems]);
+  }, [checkoutItems, selectedState]);
 
   const loadQuote = useCallback(async () => {
     const requestId = quoteRequestId.current + 1;
     quoteRequestId.current = requestId;
     if (checkoutItems.length === 0) {
       setQuote(null);
+      setQuoteLoading(false);
+      setQuoteError('');
+      return;
+    }
+    if (!selectedState) {
+      setQuote(null);
+      setServerTotals(null);
       setQuoteLoading(false);
       setQuoteError('');
       return;
@@ -101,9 +148,10 @@ export default function Checkout() {
     } finally {
       if (requestId === quoteRequestId.current) setQuoteLoading(false);
     }
-  }, [checkoutItems.length, fetchQuote]);
+  }, [checkoutItems.length, fetchQuote, selectedState]);
 
   useEffect(() => { loadQuote(); }, [loadQuote]);
+  const selectedStateIsAvailable = deliveryOptions.some(({ state }) => state === selectedState);
 
   const setCustomerField = (field, value) => {
     setCustomer((current) => ({ ...current, [field]: value }));
@@ -122,8 +170,12 @@ export default function Checkout() {
       setError('Enter a valid 10-digit phone number.');
       return;
     }
+    if (!selectedStateIsAvailable) {
+      setError('Select a state where delivery is available.');
+      return;
+    }
     if (!quote || quoteLoading || quoteError) {
-      setError('Current database prices are not available. Retry loading prices before continuing.');
+      setError('The current order total is not available. Retry loading it before continuing.');
       return;
     }
 
@@ -161,7 +213,7 @@ export default function Checkout() {
         productDetails,
         '',
         `Subtotal: ${money(currentQuote.subtotalPaise / 100)}`,
-        `Delivery: ${currentQuote.deliveryChargePaise ? money(currentQuote.deliveryChargePaise / 100) : 'Free'}`,
+        `Delivery: ${money(currentQuote.deliveryChargePaise / 100)}`,
         `Total amount: ${money(currentQuote.totalPaise / 100)}`,
       ].join('\n');
       whatsappWindow.location.href = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
@@ -195,8 +247,12 @@ export default function Checkout() {
 
   const submit = async (event) => {
     event.preventDefault();
+    if (!selectedStateIsAvailable) {
+      setError('Select a state where delivery is available.');
+      return;
+    }
     if (!quote || quoteLoading || quoteError) {
-      setError('Current database prices are not available. Retry loading prices before continuing.');
+      setError('The current order total is not available. Retry loading it before continuing.');
       return;
     }
     setProcessing(true);
@@ -311,9 +367,21 @@ export default function Checkout() {
                 value={customer.address.city} onChange={(event) => setAddressField('city', event.target.value)} />
             </label>
             <label className="checkout-field">
-              State
-              <input autoComplete="address-level1" maxLength="80" minLength="2" required
-                value={customer.address.state} onChange={(event) => setAddressField('state', event.target.value)} />
+              State / UT
+              <select autoComplete="address-level1" disabled={deliveryLoading || deliveryOptions.length === 0}
+                required value={selectedState}
+                onChange={(event) => setAddressField('state', event.target.value)}>
+                <option value="">
+                  {deliveryLoading ? 'Loading available states…' : 'Select state'}
+                </option>
+                {deliveryOptions.map(({ state }) => <option key={state} value={state}>{state}</option>)}
+              </select>
+              {deliveryError && <small className="checkout-error" role="alert">{deliveryError}</small>}
+              {!deliveryLoading && !deliveryError && deliveryOptions.length === 0 && (
+                <small className="checkout-error" role="status">
+                  Delivery is not available in any states yet. Please contact the store.
+                </small>
+              )}
             </label>
             <label className="checkout-field">
               PIN code
@@ -328,8 +396,18 @@ export default function Checkout() {
             <h2>Order summary</h2>
             <div className="checkout-summary-items">
               {quoteLoading && <p role="status">Loading current product prices and delivery charge…</p>}
+              {deliveryLoading && <p role="status">Loading available delivery states…</p>}
+              {deliveryError && <p className="checkout-error" role="alert">
+                Could not load delivery states: {deliveryError}
+              </p>}
+              {!deliveryLoading && !deliveryError && deliveryOptions.length === 0 && (
+                <p className="checkout-error" role="status">Delivery is not available in any states yet.</p>
+              )}
+              {!deliveryLoading && !deliveryError && deliveryOptions.length > 0 && !selectedState && (
+                <p role="status">Select a state to calculate your delivery charge and total.</p>
+              )}
               {quoteError && <p className="checkout-error" role="alert">
-                Could not load current database prices: {quoteError}
+                Could not load the current order total: {quoteError}
               </p>}
               {quote?.items.map((item) => (
                 <div className="checkout-summary-item" key={`${item.productId}:${item.variantId}`}>
@@ -348,9 +426,7 @@ export default function Checkout() {
                 ? money(displayedTotals.subtotalPaise / 100)
                 : '—'}</span></p>
               <p><span>Delivery</span><span>{displayedTotals
-                ? (displayedTotals.deliveryChargePaise
-                  ? money(displayedTotals.deliveryChargePaise / 100)
-                  : 'Free')
+                ? money(displayedTotals.deliveryChargePaise / 100)
                 : quoteError ? 'Unavailable' : '—'}</span></p>
               <p className="checkout-grand-total"><strong>Total</strong><strong>{displayedTotals
                 ? money(displayedTotals.totalPaise / 100)
@@ -361,7 +437,13 @@ export default function Checkout() {
               {quoteError && (
                 <button className="btn o checkout-retry" disabled={quoteLoading || processing || preparingWhatsApp}
                   onClick={loadQuote} type="button">
-                  Retry loading prices
+                  Retry loading total
+                </button>
+              )}
+              {deliveryError && (
+                <button className="btn o checkout-retry" disabled={deliveryLoading || processing || preparingWhatsApp}
+                  onClick={loadDeliveryOptions} type="button">
+                  Retry loading states
                 </button>
               )}
               {verificationRetry && (
@@ -371,12 +453,14 @@ export default function Checkout() {
                 </button>
               )}
               <button className="btn checkout-whatsapp"
-                disabled={processing || preparingWhatsApp || quoteLoading || !quote || Boolean(quoteError)}
+                disabled={processing || preparingWhatsApp || quoteLoading || !quote || Boolean(quoteError)
+                  || deliveryLoading || Boolean(deliveryError) || !selectedStateIsAvailable}
                 onClick={orderViaWhatsApp} type="button">
                 {preparingWhatsApp ? 'Preparing WhatsApp order…' : 'Order via WhatsApp'}
               </button>
               <button className="btn checkout-submit"
-                disabled={processing || preparingWhatsApp || quoteLoading || !quote || Boolean(quoteError)}
+                disabled={processing || preparingWhatsApp || quoteLoading || !quote || Boolean(quoteError)
+                  || deliveryLoading || Boolean(deliveryError) || !selectedStateIsAvailable}
                 form="checkout-details-form" type="submit">
                 <span>{processing ? 'Please wait…' : `PAY ${displayedTotals ? money(displayedTotals.totalPaise / 100) : ''}`}</span>
                 <span className="checkout-payment-methods" aria-hidden="true">

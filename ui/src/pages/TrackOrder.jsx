@@ -12,7 +12,7 @@ const statusLabel = (status) => ({
 }[status] || status.replaceAll('_', ' '));
 
 export default function TrackOrder() {
-  const [lookupMode, setLookupMode] = useState('order');
+  const [lookupMode, setLookupMode] = useState('phone');
   const [orderNumber, setOrderNumber] = useState('');
   const [checkoutContact, setCheckoutContact] = useState('');
   const [orders, setOrders] = useState([]);
@@ -44,25 +44,15 @@ export default function TrackOrder() {
   };
 
   return (
-    <>
+    <div className="track-order-page">
       <PageHeader title="Track Your Order" />
       <section className="support-page">
         <div className="support-intro">
           <p className="admin-eyebrow">Order updates</p>
           <h2>Where’s my order?</h2>
-          <p>Look up an order by its order number or find orders using your checkout phone number.</p>
+          <p>Find your orders using your checkout phone number, or track one by its order number.</p>
         </div>
         <div className="track-mode-switch" role="group" aria-label="Choose how to track your order">
-          <button
-            className={`track-mode-button${lookupMode === 'order' ? ' active' : ''}`}
-            type="button"
-            aria-pressed={lookupMode === 'order'}
-            disabled={loading}
-            onClick={() => { setLookupMode('order'); setCheckoutContact(''); setError(''); setOrders([]); }}
-          >
-            <Icon d={'<path d="m21 16-9 5-9-5V8l9-5 9 5z"/><path d="m3.3 7.5 8.7 5 8.7-5"/><path d="M12 22V12.5"/><circle cx="18" cy="18" r="3"/><path d="m20.2 20.2 1.3 1.3"/>'} size={18} />
-            Order number
-          </button>
           <button
             className={`track-mode-button${lookupMode === 'phone' ? ' active' : ''}`}
             type="button"
@@ -72,6 +62,16 @@ export default function TrackOrder() {
           >
             <Icon d={'<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.2 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.96.35 1.9.69 2.8a2 2 0 0 1-.45 2.11L8.08 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.84.57 2.8.69a2 2 0 0 1 1.74 2.04z"/>'} size={18} />
             Phone number
+          </button>
+          <button
+            className={`track-mode-button${lookupMode === 'order' ? ' active' : ''}`}
+            type="button"
+            aria-pressed={lookupMode === 'order'}
+            disabled={loading}
+            onClick={() => { setLookupMode('order'); setCheckoutContact(''); setError(''); setOrders([]); }}
+          >
+            <Icon d={'<path d="m21 16-9 5-9-5V8l9-5 9 5z"/><path d="m3.3 7.5 8.7 5 8.7-5"/><path d="M12 22V12.5"/><circle cx="18" cy="18" r="3"/><path d="m20.2 20.2 1.3 1.3"/>'} size={18} />
+            Order number
           </button>
         </div>
         <form className="support-panel support-form track-form" onSubmit={submit}>
@@ -132,8 +132,15 @@ export default function TrackOrder() {
                 </p>
                 {order.status === 'dispatched' && order.trackingId && order.trackingUrl && (
                   <div className="track-shipment">
-                    <p><strong>Tracking ID:</strong> {order.trackingId}</p>
-                    <a href={order.trackingUrl} rel="noreferrer" target="_blank">Track shipment</a>
+                    <p>
+                      <Icon d={'<path d="m21 16-9 5-9-5V8l9-5 9 5z"/><path d="m3.3 7.5 8.7 5 8.7-5"/><path d="M12 22V12.5"/>'} size={18} />
+                      <strong>Tracking ID:</strong> {order.trackingId}
+                    </p>
+                    <a className="btn track-shipment-link" href={order.trackingUrl} rel="noreferrer" target="_blank">
+                      <Icon d={'<path d="M3 7h11v10H3z"/><path d="M14 10h4l3 3v4h-7z"/><circle cx="7.5" cy="18" r="1.5"/><circle cx="17.5" cy="18" r="1.5"/>'} size={18} />
+                      <span>Click here to track your order</span>
+                      <Icon d={'<path d="M7 17 17 7"/><path d="M7 7h10v10"/>'} size={16} />
+                    </a>
                   </div>
                 )}
                 <ul className="track-items">
@@ -150,6 +157,6 @@ export default function TrackOrder() {
           </div>
         )}
       </section>
-    </>
+    </div>
   );
 }

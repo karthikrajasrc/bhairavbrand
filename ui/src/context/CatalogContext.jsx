@@ -44,6 +44,10 @@ export function CatalogProvider({ children }) {
     setCategories((current) => normalizeCategories(current).filter((category) => category._id !== categoryId));
   }, []);
 
+  const removeProduct = useCallback((productId) => {
+    setProducts((current) => current.filter((product) => product._id !== productId));
+  }, []);
+
   useEffect(() => {
     refresh().catch(() => {});
   }, [refresh]);
@@ -60,11 +64,12 @@ export function CatalogProvider({ children }) {
       refresh,
       addCategory,
       removeCategory,
+      removeProduct,
       categoryBySlug,
       getProduct,
       byCategory,
     };
-  }, [addCategory, categories, error, loading, products, refresh, removeCategory]);
+  }, [addCategory, categories, error, loading, products, refresh, removeCategory, removeProduct]);
 
   return <CatalogContext.Provider value={value}>{children}</CatalogContext.Provider>;
 }

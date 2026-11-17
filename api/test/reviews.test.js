@@ -20,6 +20,7 @@ let baseUrl;
 const query = (operation) => {
   const result = Promise.resolve().then(operation);
   result.populate = () => result;
+  result.lean = () => result;
   return result;
 };
 
@@ -35,7 +36,11 @@ const Session = {
 const Review = {
   find: () => {
     const result = Promise.resolve(reviews);
-    result.sort = () => Promise.resolve([...reviews].sort((a, b) => b.createdAt - a.createdAt));
+    result.sort = () => {
+      const sorted = Promise.resolve([...reviews].sort((a, b) => b.createdAt - a.createdAt));
+      sorted.lean = () => sorted;
+      return sorted;
+    };
     return result;
   },
   create: async (input) => {

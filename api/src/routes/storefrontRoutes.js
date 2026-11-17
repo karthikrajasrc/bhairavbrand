@@ -10,4 +10,3 @@ export function createStorefrontRoutes({ controller }) {
   router.get('/storefront/category-shortcut-icons', controller.categoryShortcutIcons);
   return router;
 }
-  

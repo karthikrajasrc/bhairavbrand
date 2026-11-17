@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { PaymentGatewayError } from '../services/razorpayService.js';
+import { getDeliveryRates } from '../services/deliveryRates.js';
 import {
   checkoutQuoteSchema,
   checkoutOrderSnapshotSchema,
@@ -23,9 +24,12 @@ export function createCheckoutController({ Product, StoreSettings, Order, razorp
     return next();
   };
 
-  const quoteOrder = async (items) => {
+  const quoteOrder = async (items, state) => {
     const productIds = [...new Set(items.map(({ productId }) => productId))];
-    const products = await Product.find({ _id: { $in: productIds } });
+    const [products, settings] = await Promise.all([
+      Product.find({ _id: { $in: productIds } }),
+      StoreSettings.findOne({ key: 'delivery' }),
+    ]);
     const productsById = new Map(products.map((product) => [product._id.toString(), product]));
     const orderItems = [];
 
@@ -57,11 +61,10 @@ export function createCheckoutController({ Product, StoreSettings, Order, razorp
     }
 
     const subtotalPaise = orderItems.reduce((total, item) => total + item.lineTotalPaise, 0);
-    const settings = await StoreSettings.findOne({ key: 'delivery' });
-    const freeShippingThresholdPaise = Math.round((settings?.freeShippingThreshold ?? 999) * 100);
-    const deliveryChargePaise = subtotalPaise >= freeShippingThresholdPaise
-      ? 0
-      : Math.round((settings?.deliveryCharge ?? 0) * 100);
+    const deliveryRate = getDeliveryRates(settings)
+      .find((rate) => rate.state === state && rate.enabled);
+    if (!deliveryRate) return { error: `Delivery is not available in ${state}. Choose another state.` };
+    const deliveryChargePaise = Math.round(deliveryRate.deliveryCharge * 100);
     return {
       items: orderItems,
       subtotalPaise,
@@ -76,7 +79,7 @@ export function createCheckoutController({ Product, StoreSettings, Order, razorp
     quote: async (req, res, next) => {
       try {
         const input = checkoutQuoteSchema.parse(req.body);
-        const quote = await quoteOrder(input.items);
+        const quote = await quoteOrder(input.items, input.state);
         if (quote.error) return res.status(400).json({ error: quote.error });
         return res.json({ quote });
       } catch (error) {
@@ -87,7 +90,7 @@ export function createCheckoutController({ Product, StoreSettings, Order, razorp
     createOrder: async (req, res, next) => {
       try {
         const input = checkoutSchema.parse(req.body);
-        const quote = await quoteOrder(input.items);
+        const quote = await quoteOrder(input.items, input.customer.address.state);
         if (quote.error) return res.status(400).json({ error: quote.error });
         if (quote.totalPaise < 100) return res.status(400).json({ error: 'The minimum order total is ₹1' });
 

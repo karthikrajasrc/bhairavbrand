@@ -34,7 +34,7 @@ export default function CartDrawer({ open, onClose }) {
       {lines.length > 0 && (
         <div className="df">
           <p><span>Subtotal</span><span>{money(subtotal)}</span></p>
-          <small style={{ color: 'var(--mut)' }}>Taxes and shipping calculated at checkout{subtotal >= 999 ? ' · Free shipping applied 🎉' : ''}</small>
+          <small style={{ color: 'var(--mut)' }}>Taxes and delivery charges are calculated at checkout.</small>
           <Link className="btn o" to="/cart" onClick={onClose}>View cart</Link>
           <Link className="btn" to="/checkout" onClick={onClose}>Check out</Link>
         </div>

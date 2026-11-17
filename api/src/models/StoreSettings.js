@@ -1,9 +1,15 @@
 import mongoose from 'mongoose';
+import { INDIAN_STATES } from '../indianStates.js';
+
+const deliveryRateSchema = new mongoose.Schema({
+  state: { type: String, required: true, enum: INDIAN_STATES },
+  deliveryCharge: { type: Number, required: true, min: 0, max: 100000 },
+  enabled: { type: Boolean, required: true, default: false },
+}, { _id: false });
 
 const storeSettingsSchema = new mongoose.Schema({
   key: { type: String, required: true, unique: true, default: 'delivery' },
-  deliveryCharge: { type: Number, required: true, min: 0, default: 0 },
-  freeShippingThreshold: { type: Number, required: true, min: 0, default: 999 },
+  deliveryRates: { type: [deliveryRateSchema], default: [] },
   offersIconUrl: {
     type: String,
     default: '',

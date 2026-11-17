@@ -1,4 +1,5 @@
 import { prepareImage } from '../imageProcessing.js';
+import { getDeliveryRates } from '../services/deliveryRates.js';
 import {
   categorySchema,
   categoryShortcutIconsSchema,
@@ -20,7 +21,7 @@ export function createAdminController({
   return {
     categories: async (_req, res, next) => {
       try {
-        return res.json({ categories: await Category.find({}).sort({ name: 1 }) });
+        return res.json({ categories: await Category.find({}).sort({ name: 1 }).lean() });
       } catch (error) {
         return next(error);
       }
@@ -98,7 +99,7 @@ export function createAdminController({
 
     products: async (_req, res, next) => {
       try {
-        return res.json({ products: await Product.find({}).sort({ createdAt: -1 }) });
+        return res.json({ products: await Product.find({}).sort({ createdAt: -1 }).lean() });
       } catch (error) {
         return next(error);
       }
@@ -106,7 +107,7 @@ export function createAdminController({
 
     orders: async (_req, res, next) => {
       try {
-        const orders = await Order.find({ paymentStatus: 'paid' }).sort({ createdAt: -1 });
+        const orders = await Order.find({ paymentStatus: 'paid' }).sort({ createdAt: -1 }).lean();
         return res.json({ orders });
       } catch (error) {
         return next(error);
@@ -167,7 +168,7 @@ export function createAdminController({
 
     reviews: async (_req, res, next) => {
       try {
-        return res.json({ reviews: await Review.find({}).sort({ createdAt: -1 }) });
+        return res.json({ reviews: await Review.find({}).sort({ createdAt: -1 }).lean() });
       } catch (error) {
         return next(error);
       }
@@ -196,7 +197,7 @@ export function createAdminController({
     product: async (req, res, next) => {
       try {
         const id = objectIdSchema.parse(req.params.id);
-        const product = await Product.findById(id);
+        const product = await Product.findById(id).lean();
         if (!product) return res.status(404).json({ error: 'Product not found' });
         return res.json({ product });
       } catch (error) {
@@ -254,11 +255,8 @@ export function createAdminController({
 
     deliveryCharges: async (_req, res, next) => {
       try {
-        const settings = await StoreSettings.findOne({ key: 'delivery' });
-        return res.json({
-          deliveryCharge: settings?.deliveryCharge ?? 0,
-          freeShippingThreshold: settings?.freeShippingThreshold ?? 999,
-        });
+        const settings = await StoreSettings.findOne({ key: 'delivery' }).lean();
+        return res.json({ deliveryRates: getDeliveryRates(settings) });
       } catch (error) {
         return next(error);
       }
@@ -269,13 +267,14 @@ export function createAdminController({
         const input = deliverySchema.parse(req.body);
         const settings = await StoreSettings.findOneAndUpdate(
           { key: 'delivery' },
-          { $set: input, $setOnInsert: { key: 'delivery' } },
-          { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true },
+          {
+            $set: input,
+            $unset: { deliveryCharge: '', freeShippingThreshold: '' },
+            $setOnInsert: { key: 'delivery' },
+          },
+          { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true, strict: false },
         );
-        return res.json({
-          deliveryCharge: settings.deliveryCharge,
-          freeShippingThreshold: settings.freeShippingThreshold,
-        });
+        return res.json({ deliveryRates: getDeliveryRates(settings) });
       } catch (error) {
         return next(error);
       }

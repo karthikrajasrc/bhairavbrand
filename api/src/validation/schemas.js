@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { INDIAN_STATES } from '../indianStates.js';
 
 const passwordSchema = z.string()
   .min(12)
@@ -76,9 +77,17 @@ export const productSchema = z.object({
   path: ['images'],
 });
 
-export const deliverySchema = z.object({
+const deliveryRateSchema = z.object({
+  state: z.enum(INDIAN_STATES),
   deliveryCharge: z.number().finite().min(0).max(100000),
-  freeShippingThreshold: z.number().finite().min(0).max(10000000),
+  enabled: z.boolean(),
+}).strict();
+
+export const deliverySchema = z.object({
+  deliveryRates: z.array(deliveryRateSchema).length(INDIAN_STATES.length)
+    .refine((rates) => new Set(rates.map(({ state }) => state)).size === INDIAN_STATES.length, {
+      message: 'Configure each state or union territory exactly once',
+    }),
 }).strict();
 
 const trackingUrlSchema = z.string().trim().max(2048).url().refine((value) => {
@@ -128,7 +137,12 @@ const checkoutItemsSchema = z.array(z.object({
 
 const checkoutPhoneSchema = z.string().trim().regex(/^\d{10}$/, 'Enter a valid 10-digit phone number');
 
-export const checkoutQuoteSchema = z.object({ items: checkoutItemsSchema }).strict();
+const deliveryStateSchema = z.enum(INDIAN_STATES);
+
+export const checkoutQuoteSchema = z.object({
+  items: checkoutItemsSchema,
+  state: deliveryStateSchema,
+}).strict();
 
 export const checkoutSchema = z.object({
   customer: z.object({
@@ -139,7 +153,7 @@ export const checkoutSchema = z.object({
       line1: z.string().trim().min(5).max(160),
       line2: z.string().trim().max(160).default(''),
       city: z.string().trim().min(2).max(80),
-      state: z.string().trim().min(2).max(80),
+      state: deliveryStateSchema,
       postalCode: z.string().trim().regex(/^\d{6}$/, 'Enter a valid 6-digit PIN code'),
     }).strict(),
   }).strict(),

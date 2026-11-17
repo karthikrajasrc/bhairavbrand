@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useCart } from '../../context/CartContext.jsx';
+import AdminSpinner from './AdminSpinner.jsx';
 
 const links = [
   { to: '/admin/products', label: 'Products' },
@@ -14,13 +16,17 @@ export default function AdminLayout() {
   const { user, logout } = useAuth();
   const { notify } = useCart();
   const navigate = useNavigate();
+  const [signingOut, setSigningOut] = useState(false);
 
   const signOut = async () => {
+    setSigningOut(true);
     try {
       await logout();
       navigate('/login', { replace: true });
     } catch (error) {
       notify(error.message || 'Could not sign out. Please try again.', 'error');
+    } finally {
+      setSigningOut(false);
     }
   };
 
@@ -34,8 +40,17 @@ export default function AdminLayout() {
             <p>Signed in as {user.email}</p>
           </div>
           <div className="admin-header-actions">
-            <NavLink className="admin-store-link" to="/">View storefront</NavLink>
-            <button className="btn o" onClick={signOut} type="button">Sign out</button>
+            <NavLink className="admin-store-link" to="/">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+                strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="m3 10 9-7 9 7" />
+                <path d="M5.5 9v12h13V9M9 21v-6h6v6" />
+              </svg>
+              <span>Return to home</span>
+            </NavLink>
+            <button className="btn o" disabled={signingOut} onClick={signOut} type="button">
+              {signingOut ? <><AdminSpinner /> Signing out…</> : 'Sign out'}
+            </button>
           </div>
         </header>
 

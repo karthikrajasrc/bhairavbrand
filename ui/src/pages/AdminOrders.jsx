@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { apiRequest } from '../context/AuthContext.jsx';
 import { useCart } from '../context/CartContext.jsx';
 import { money } from '../data/products.js';
+import AdminSpinner from '../components/admin/AdminSpinner.jsx';
 
 const formatDate = (value) => new Date(value).toLocaleString('en-IN', {
   dateStyle: 'medium',
@@ -140,7 +141,7 @@ export default function AdminOrders() {
         </div>
       </div>
       <p className="admin-form-intro admin-orders-intro">Orders appear here after Razorpay confirms payment.</p>
-      {loading ? <p className="admin-message" role="status">Loading orders…</p>
+      {loading ? <p className="admin-message admin-loading-state" role="status"><AdminSpinner /> Loading orders…</p>
         : orders.length === 0 ? (
           <div className="admin-panel admin-orders-empty">
             <h3>No paid orders yet</h3>
@@ -172,7 +173,7 @@ export default function AdminOrders() {
                   </div>
                   <div className="admin-order-actions">
                     <select
-                      className="admin-order-status-select"
+                      className={`admin-order-status-select admin-order-status-select-${order.status}`}
                       aria-label={`Update status for order ${order.orderNumber}`}
                       disabled={Boolean(updatingOrderId)}
                       value={order.status}
@@ -236,9 +237,7 @@ export default function AdminOrders() {
                   <div className="admin-order-footer">
                     <span>Payment confirmed</span>
                     <span>Subtotal {money(order.subtotalPaise / 100)}</span>
-                    <span>Delivery {order.deliveryChargePaise
-                      ? money(order.deliveryChargePaise / 100)
-                      : 'Free'}</span>
+                    <span>Delivery {money(order.deliveryChargePaise / 100)}</span>
                     <strong>Paid {money(order.totalPaise / 100)}</strong>
                   </div>
                 </div>
@@ -275,7 +274,7 @@ export default function AdminOrders() {
                 onClick={() => updateOrderStatus(confirmingOrder, { status: 'accepted' })}
                 type="button"
               >
-                {updatingOrderId ? 'Saving…' : 'Confirm acceptance'}
+                {updatingOrderId ? <><AdminSpinner /> Saving…</> : 'Confirm acceptance'}
               </button>
             </div>
           </section>
@@ -325,7 +324,7 @@ export default function AdminOrders() {
                   Cancel
                 </button>
                 <button className="btn" disabled={Boolean(updatingOrderId)} type="submit">
-                  {updatingOrderId ? 'Saving…' : 'Confirm dispatch'}
+                  {updatingOrderId ? <><AdminSpinner /> Saving…</> : 'Confirm dispatch'}
                 </button>
               </div>
             </form>

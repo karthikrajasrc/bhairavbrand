@@ -1,15 +1,23 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { apiRequest } from '../context/AuthContext.jsx';
 import { useCatalog } from '../context/CatalogContext.jsx';
 import { useCart } from '../context/CartContext.jsx';
+import AdminConfirmDialog from '../components/admin/AdminConfirmDialog.jsx';
+import AdminSpinner from '../components/admin/AdminSpinner.jsx';
 
 export default function AdminProducts() {
-  const { categoryBySlug, refresh } = useCatalog();
+  const {
+    categoryBySlug,
+    products,
+    loading,
+    error,
+    removeProduct: removeCatalogProduct,
+  } = useCatalog();
   const { notify } = useCart();
-  const [products, setProducts] = useState([]);
   const [search, setSearch] = useState('');
   const [busyId, setBusyId] = useState('');
+  const [confirmation, setConfirmation] = useState(null);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -20,30 +28,29 @@ export default function AdminProducts() {
     }
   }, [location.pathname, location.state, navigate, notify]);
 
-  const loadProducts = useCallback(async () => {
-    try {
-      const result = await apiRequest('/api/admin/products');
-      setProducts(result.products);
-    } catch (requestError) {
-      notify(requestError.message, 'error');
-    }
-  }, [notify]);
-
-  useEffect(() => { loadProducts(); }, [loadProducts]);
-
   const removeProduct = async (product) => {
     setBusyId(product._id);
     try {
       await apiRequest(`/api/admin/products/${product._id}`, { method: 'DELETE' });
-      setProducts((current) => current.filter((item) => item._id !== product._id));
+      removeCatalogProduct(product._id);
       notify('Product removed.');
-      await refresh();
     } catch (requestError) {
       notify(requestError.message, 'error');
     } finally {
       setBusyId('');
     }
   };
+
+  const confirmRemoveProduct = (product) => setConfirmation({
+    title: `Remove ${product.name}?`,
+    message: 'This will permanently remove the product from your catalogue.',
+    confirmLabel: 'Remove product',
+    danger: true,
+    onConfirm: () => {
+      setConfirmation(null);
+      return removeProduct(product);
+    },
+  });
 
   const normalizedSearch = search.trim().toLowerCase();
   const filteredProducts = products.filter((product) => {
@@ -78,11 +85,13 @@ export default function AdminProducts() {
         </div>
       </div>
       <section className="admin-panel admin-record-list">
-        {products.length === 0 ? <p>No products yet. Add your first product to get started.</p> : (
+        {loading ? <p className="admin-loading-state" role="status"><AdminSpinner /> Loading products…</p>
+          : error ? <p className="admin-message error" role="alert">{error}</p>
+          : products.length === 0 ? <p>No products yet. Add your first product to get started.</p> : (
           filteredProducts.length === 0
             ? <p role="status">No products match “{search}”.</p>
             : filteredProducts.map((product) => (
-            <article className="admin-product-row" key={product._id}>
+            <article className="admin-product-row admin-product-inventory-row" key={product._id}>
               <span className="admin-product-art">
                 {product.imageUrl && <img src={product.imageUrl} alt="" />}
               </span>
@@ -98,15 +107,18 @@ export default function AdminProducts() {
                   {Array.isArray(product.images) && product.images.length > 1 ? ` · ${product.images.length} images` : ''}
                 </small>
               </div>
-              <Link className="admin-edit" to={`/admin/products/${product._id}/edit`}>Edit</Link>
-              <button className="admin-remove" disabled={busyId === product._id}
-                onClick={() => removeProduct(product)} type="button">
-                {busyId === product._id ? 'Removing…' : 'Remove'}
-              </button>
+              <div className="admin-row-actions">
+                <Link className="admin-edit" to={`/admin/products/${product._id}/edit`}>Edit</Link>
+                <button className="admin-remove" disabled={busyId === product._id}
+                  onClick={() => confirmRemoveProduct(product)} type="button">
+                  {busyId === product._id ? <><AdminSpinner /> Removing…</> : 'Remove'}
+                </button>
+              </div>
             </article>
           ))
         )}
       </section>
+      <AdminConfirmDialog confirmation={confirmation} onCancel={() => setConfirmation(null)} />
     </>
   );
 }

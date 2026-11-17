@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { apiRequest } from '../context/AuthContext.jsx';
 import { useCart } from '../context/CartContext.jsx';
+import AdminConfirmDialog from '../components/admin/AdminConfirmDialog.jsx';
+import AdminSpinner from '../components/admin/AdminSpinner.jsx';
 
 const initialReview = { name: '', stars: '5', comments: '' };
 
@@ -11,6 +13,7 @@ export default function AdminReviews() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState('');
+  const [confirmation, setConfirmation] = useState(null);
 
   const loadReviews = useCallback(async () => {
     try {
@@ -25,8 +28,7 @@ export default function AdminReviews() {
 
   useEffect(() => { loadReviews(); }, [loadReviews]);
 
-  const submit = async (event) => {
-    event.preventDefault();
+  const addReview = async () => {
     setSaving(true);
     try {
       const result = await apiRequest('/api/admin/reviews', {
@@ -43,6 +45,19 @@ export default function AdminReviews() {
     }
   };
 
+  const submit = (event) => {
+    event.preventDefault();
+    setConfirmation({
+      title: 'Add this review?',
+      message: `This will publish ${review.name || 'the review'} on your storefront.`,
+      confirmLabel: 'Add review',
+      onConfirm: () => {
+        setConfirmation(null);
+        return addReview();
+      },
+    });
+  };
+
   const removeReview = async (item) => {
     setBusyId(item._id);
     try {
@@ -55,6 +70,17 @@ export default function AdminReviews() {
       setBusyId('');
     }
   };
+
+  const confirmRemoveReview = (item) => setConfirmation({
+    title: `Remove ${item.name}'s review?`,
+    message: 'This will permanently remove the review from your storefront.',
+    confirmLabel: 'Remove review',
+    danger: true,
+    onConfirm: () => {
+      setConfirmation(null);
+      return removeReview(item);
+    },
+  });
 
   return (
     <>
@@ -84,13 +110,13 @@ export default function AdminReviews() {
         </label>
         <div className="admin-form-actions admin-wide">
           <button className="btn" disabled={saving} type="submit">
-            {saving ? 'Saving…' : 'Add review'}
+            {saving ? <><AdminSpinner /> Saving…</> : 'Add review'}
           </button>
         </div>
       </form>
       <section className="admin-panel admin-record-list" aria-label="Existing reviews">
         <h3>Existing reviews</h3>
-        {loading ? <p role="status">Loading reviews…</p>
+        {loading ? <p className="admin-loading-state" role="status"><AdminSpinner /> Loading reviews…</p>
           : reviews.length === 0 ? <p>No reviews yet. Add one above to display it on the storefront.</p>
             : reviews.map((item) => (
               <article className="admin-product-row admin-review-row" key={item._id}>
@@ -102,12 +128,13 @@ export default function AdminReviews() {
                   <small>{item.comments}</small>
                 </div>
                 <button className="admin-remove" disabled={busyId === item._id}
-                  onClick={() => removeReview(item)} type="button">
-                  {busyId === item._id ? 'Removing…' : 'Remove'}
+                    onClick={() => confirmRemoveReview(item)} type="button">
+                  {busyId === item._id ? <><AdminSpinner /> Removing…</> : 'Remove'}
                 </button>
               </article>
             ))}
       </section>
+      <AdminConfirmDialog confirmation={confirmation} onCancel={() => setConfirmation(null)} />
     </>
   );
 }

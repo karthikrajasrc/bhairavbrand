@@ -4,6 +4,8 @@ import { apiRequest } from '../context/AuthContext.jsx';
 import { useCatalog } from '../context/CatalogContext.jsx';
 import { useCart } from '../context/CartContext.jsx';
 import AdminImageField from '../components/admin/AdminImageField.jsx';
+import AdminConfirmDialog from '../components/admin/AdminConfirmDialog.jsx';
+import AdminSpinner from '../components/admin/AdminSpinner.jsx';
 import { uploadImage } from '../lib/uploadImage.js';
 import { SIZE_UNITS } from '../data/productVariants.js';
 
@@ -23,6 +25,7 @@ export default function AdminAddProduct() {
   const [imageFiles, setImageFiles] = useState([null, null, null]);
   const [savedImages, setSavedImages] = useState([null, null, null]);
   const [sizes, setSizes] = useState([newSize()]);
+  const [confirmation, setConfirmation] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -61,8 +64,7 @@ export default function AdminAddProduct() {
     )));
   };
 
-  const submit = async (event) => {
-    event.preventDefault();
+  const saveProduct = async () => {
     setSaving(true);
     try {
       if (!imageFiles[0] && !savedImages[0]) throw new Error('Choose a main product image before saving');
@@ -113,13 +115,28 @@ export default function AdminAddProduct() {
     }
   };
 
+  const submit = (event) => {
+    event.preventDefault();
+    setConfirmation({
+      title: `${editing ? 'Save changes to' : 'Add'} ${product.name || 'this product'}?`,
+      message: editing
+        ? 'This will update the product information shown in your catalogue.'
+        : 'This will add the product to your catalogue and make it available in the store.',
+      confirmLabel: editing ? 'Save changes' : 'Add product',
+      onConfirm: () => {
+        setConfirmation(null);
+        return saveProduct();
+      },
+    });
+  };
+
   return (
     <>
       <div className="admin-page-title">
         <div><p className="admin-eyebrow">Catalogue</p><h2>{editing ? 'Edit product' : 'Add product'}</h2></div>
         <Link className="admin-back-link" to="/admin/products">← All products</Link>
       </div>
-      {loadingProduct && <p className="admin-message" role="status">Loading product…</p>}
+      {loadingProduct && <p className="admin-message admin-loading-state" role="status"><AdminSpinner /> Loading product…</p>}
       {categories.length === 0 && (
         <p className="admin-message">Create a category before adding products. <Link to="/admin/categories">Manage categories</Link></p>
       )}
@@ -196,11 +213,12 @@ export default function AdminAddProduct() {
         </fieldset>
         <div className="admin-form-actions admin-wide">
           <button className="btn" disabled={saving || categories.length === 0} type="submit">
-            {saving ? 'Saving…' : editing ? 'Save changes' : 'Add product'}
+            {saving ? <><AdminSpinner /> Saving…</> : editing ? 'Save changes' : 'Add product'}
           </button>
           <Link className="btn o" to="/admin/products">Cancel</Link>
         </div>
       </form>}
+      <AdminConfirmDialog confirmation={confirmation} onCancel={() => setConfirmation(null)} />
     </>
   );
 }

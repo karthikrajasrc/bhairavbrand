@@ -4,6 +4,7 @@ import { after, before, test } from 'node:test';
 import sharp from 'sharp';
 import { createApp } from '../src/app.js';
 import { Category, Order, Product, StoreSettings, User } from '../src/models/index.js';
+import { INDIAN_STATES } from '../src/indianStates.js';
 import { prepareImage } from '../src/imageProcessing.js';
 
 const uiOrigin = 'http://localhost:5173';
@@ -35,6 +36,7 @@ const query = (operation) => {
   result.select = () => result;
   result.populate = () => result;
   result.sort = () => result;
+  result.lean = () => result;
   return result;
 };
 
@@ -135,6 +137,7 @@ const FakeStoreSettings = {
   findOne: (filter) => query(() => storeSettings?.key === filter.key ? storeSettings : null),
   findOneAndUpdate: async (_filter, update) => {
     storeSettings = { ...(storeSettings || { key: 'delivery' }), ...update.$set };
+    for (const key of Object.keys(update.$unset || {})) delete storeSettings[key];
     return storeSettings;
   },
 };
@@ -624,16 +627,44 @@ test('verified admin Google identity can manage products and delivery charges', 
   }, adminCookie);
   assert.equal(missingProductImage.status, 400);
 
-  const deliveryResponse = await fetch(`${baseUrl}/api/admin/delivery-charges`, {
-    method: 'PUT',
-    headers: { Origin: uiOrigin, 'Content-Type': 'application/json', Cookie: adminCookie },
-    body: JSON.stringify({ deliveryCharge: 49, freeShippingThreshold: 999 }),
+  const deliveryHeaders = {
+    Origin: uiOrigin,
+    'Content-Type': 'application/json',
+    Cookie: adminCookie,
+  };
+  const initialDeliverySettings = await fetch(`${baseUrl}/api/admin/delivery-charges`, {
+    headers: { Cookie: adminCookie },
   });
-  assert.equal(deliveryResponse.status, 200);
-  assert.deepEqual(await deliveryResponse.json(), { deliveryCharge: 49, freeShippingThreshold: 999 });
+  const initialRates = (await initialDeliverySettings.json()).deliveryRates;
+  assert.equal(initialRates.length, INDIAN_STATES.length);
+  assert.ok(initialRates.every((rate) => rate.deliveryCharge === 0 && rate.enabled === false));
   assert.deepEqual(
     await (await fetch(`${baseUrl}/api/storefront/delivery-charges`)).json(),
-    { deliveryCharge: 49, freeShippingThreshold: 999 },
+    { deliveryOptions: [] },
+  );
+
+  const deliveryRates = INDIAN_STATES.map((state) => ({
+    state,
+    deliveryCharge: state === 'Tamil Nadu' ? 49 : 0,
+    enabled: state === 'Tamil Nadu',
+  }));
+  const invalidDeliveryResponse = await fetch(`${baseUrl}/api/admin/delivery-charges`, {
+    method: 'PUT',
+    headers: deliveryHeaders,
+    body: JSON.stringify({ deliveryRates: deliveryRates.slice(1) }),
+  });
+  assert.equal(invalidDeliveryResponse.status, 400);
+
+  const deliveryResponse = await fetch(`${baseUrl}/api/admin/delivery-charges`, {
+    method: 'PUT',
+    headers: deliveryHeaders,
+    body: JSON.stringify({ deliveryRates }),
+  });
+  assert.equal(deliveryResponse.status, 200);
+  assert.deepEqual((await deliveryResponse.json()).deliveryRates, deliveryRates);
+  assert.deepEqual(
+    await (await fetch(`${baseUrl}/api/storefront/delivery-charges`)).json(),
+    { deliveryOptions: [{ state: 'Tamil Nadu', deliveryCharge: 49 }] },
   );
 
   const checkoutBody = {

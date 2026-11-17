@@ -2,8 +2,27 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 
 const AuthContext = createContext(null);
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:4000').replace(/\/+$/, '');
+const inFlightGetRequests = new Map();
 
-export async function apiRequest(path, { method = 'GET', body } = {}) {
+export function apiRequest(path, { method = 'GET', body } = {}) {
+  const requestKey = method === 'GET' && body === undefined ? `${API_URL}${path}` : null;
+  if (requestKey && inFlightGetRequests.has(requestKey)) {
+    return inFlightGetRequests.get(requestKey);
+  }
+
+  const requestPromise = performApiRequest(path, { method, body });
+  if (!requestKey) return requestPromise;
+
+  const sharedRequestPromise = requestPromise.finally(() => {
+    if (inFlightGetRequests.get(requestKey) === sharedRequestPromise) {
+      inFlightGetRequests.delete(requestKey);
+    }
+  });
+  inFlightGetRequests.set(requestKey, sharedRequestPromise);
+  return sharedRequestPromise;
+}
+
+async function performApiRequest(path, { method = 'GET', body } = {}) {
   let response;
   const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
   try {
