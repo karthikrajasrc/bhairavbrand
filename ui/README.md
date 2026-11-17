@@ -57,5 +57,5 @@ src/
 - `src/data/content.js`: testimonials and about copy.
 - Footer: confirm the FSSAI badge, add the licence number, and wire policy/FAQ/contact pages.
 - Customers can track an order using its order number and either the checkout email address or phone number.
-- BrowserRouter needs an SPA fallback on your host (serve `index.html` for unknown paths).
+- BrowserRouter needs an SPA fallback on your host (serve `index.html` for unknown paths). The `public/_redirects` file provides this for Netlify-compatible hosts; configure an equivalent rewrite if your host uses a different format.
 - Run API tests from `api/` with `npm test`.
